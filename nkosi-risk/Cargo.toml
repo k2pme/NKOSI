@@ -1,0 +1,13 @@
+[package]
+name = "nkosi-risk"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nkosi-common = { path = "../nkosi-common" }
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true

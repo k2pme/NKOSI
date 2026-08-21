@@ -1,0 +1,22 @@
+[package]
+name = "nkosi-agent"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nkosi-common = { path = "../nkosi-common" }
+nkosi-db = { path = "../nkosi-db" }
+nkosi-monitors = { path = "../nkosi-monitors" }
+nkosi-engines = { path = "../nkosi-engines" }
+nkosi-risk = { path = "../nkosi-risk" }
+nkosi-response = { path = "../nkosi-response" }
+nkosi-ti = { path = "../nkosi-ti" }
+nkosi-notify = { path = "../nkosi-notify" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true

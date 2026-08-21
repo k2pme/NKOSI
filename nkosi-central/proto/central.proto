@@ -1,0 +1,114 @@
+syntax = "proto3";
+package nkosi.central;
+
+option go_package = "nkosi/central";
+
+// Central service for multi-server management
+service NkosiCentral {
+    // Agent registration
+    rpc RegisterAgent(AgentInfo) returns (AgentRegistration);
+    
+    // Heartbeat
+    rpc Heartbeat(AgentHeartbeat) returns (HeartbeatAck);
+    
+    // Report events
+    rpc ReportEvents(EventBatch) returns (EventAck);
+    
+    // Get agents
+    rpc GetAgents(Empty) returns (AgentList);
+    
+    // Get events from all agents
+    rpc GetEvents(EventQuery) returns (EventList);
+    
+    // Get aggregated stats
+    rpc GetStats(Empty) returns (Stats);
+}
+
+message Empty {}
+
+message AgentInfo {
+    string agent_id = 1;
+    string hostname = 2;
+    string ip_address = 3;
+    string os_version = 4;
+    string nkosi_version = 5;
+    string agent_name = 6;
+}
+
+message AgentRegistration {
+    string central_id = 1;
+    bool success = 2;
+    string message = 3;
+    int64 timestamp = 4;
+}
+
+message AgentHeartbeat {
+    string agent_id = 1;
+    int64 timestamp = 2;
+    uint32 events_count = 3;
+    uint32 threats_count = 4;
+    uint32 score = 5;
+}
+
+message HeartbeatAck {
+    bool success = 1;
+    string message = 2;
+    int64 server_time = 3;
+    bool update_available = 4;
+    string latest_version = 5;
+}
+
+message EventBatch {
+    string agent_id = 1;
+    repeated SecurityEvent events = 2;
+}
+
+message SecurityEvent {
+    string id = 1;
+    int64 timestamp = 2;
+    string event_type = 3;
+    string source_module = 4;
+    string severity = 5;
+    uint32 score = 6;
+    string file_path = 7;
+    string file_hash = 8;
+    string remote_ip = 9;
+    uint32 remote_port = 10;
+    string domain = 11;
+    string details = 12;
+}
+
+message EventAck {
+    bool success = 1;
+    uint32 received_count = 2;
+    string message = 3;
+}
+
+message AgentList {
+    repeated AgentInfo agents = 1;
+    int64 timestamp = 2;
+}
+
+message EventQuery {
+    string agent_id = 1;
+    string severity = 2;
+    int64 start_time = 3;
+    int64 end_time = 4;
+    uint32 limit = 5;
+}
+
+message EventList {
+    repeated SecurityEvent events = 1;
+    uint32 total = 2;
+}
+
+message Stats {
+    uint32 total_agents = 1;
+    uint32 online_agents = 2;
+    uint32 offline_agents = 3;
+    uint32 total_events_24h = 4;
+    uint32 total_threats_24h = 5;
+    uint32 avg_score = 6;
+    map<string, uint32> events_by_agent = 7;
+    map<string, uint32> threats_by_severity = 8;
+}

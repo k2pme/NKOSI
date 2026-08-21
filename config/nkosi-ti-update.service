@@ -1,0 +1,14 @@
+[Unit]
+Description=NKOSI Threat Intelligence Update Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/nkosi-cli update --force
+StandardOutput=journal
+StandardError=journal
+User=root
+
+[Install]
+WantedBy=multi-user.target

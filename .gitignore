@@ -1,0 +1,6 @@
+/target
+/data
+/nkosi.db
+*.db
+*.deb
+protoc-*.zip

@@ -1,0 +1,26 @@
+[package]
+name = "nkosi-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nkosi-common = { path = "../nkosi-common" }
+nkosi-db = { path = "../nkosi-db" }
+nkosi-scanner = { path = "../nkosi-scanner" }
+actix-web = "4"
+actix-rt = "2"
+actix-cors = "0.7"
+actix-files = "0.6"
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+env_logger = "0.10"
+prometheus = { version = "0.13", features = ["process"] }
+lazy_static = "1"
+sha2 = "0.10"
+hex = "0.4"

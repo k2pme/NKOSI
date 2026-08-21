@@ -1,0 +1,26 @@
+[Unit]
+Description=NKOSI Security Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/nkosi-agent
+Restart=always
+RestartSec=5
+User=root
+Group=root
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/var/lib/nkosi /var/log/nkosi
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=NKOSI Threat Intelligence Update Timer
+Requires=nkosi-ti-update.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=24h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

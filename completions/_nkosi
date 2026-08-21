@@ -1,0 +1,92 @@
+#compdef nkosi
+
+_nkosi() {
+    local -a commands
+    commands=(
+        'status:Display current agent status'
+        'scan:Scan a file or directory for threats'
+        'quick:Quick scan of critical system directories'
+        'full:Full system scan'
+        'rootkit:Scan for rootkits'
+        'integrity:Scan system integrity'
+        'kernel:Scan kernel modules'
+        'ssh:Scan SSH brute-force attempts'
+        'firewall:Manage firewall rules'
+        'quarantine:Manage quarantined files'
+        'backup:Manage configuration backups'
+        'update:Update threat intelligence'
+        'logs:Display recent logs'
+        'process:Scan a specific process'
+        'network:Scan network connections'
+    )
+
+    _arguments -C \
+        '1:command:->command' \
+        '*::arg:->args'
+
+    case $state in
+        command)
+            _describe 'command' commands
+            ;;
+        args)
+            case $words[1] in
+                scan)
+                    _files
+                    ;;
+                firewall)
+                    local -a firewall_cmds
+                    firewall_cmds=(
+                        'status:Show firewall status'
+                        'init:Initialize NKOSI chains'
+                        'flush:Flush NKOSI rules'
+                        'block:Block an IP address'
+                        'unblock:Unblock an IP address'
+                        'whitelist:Add IP to whitelist'
+                        'unwhitelist:Remove IP from whitelist'
+                        'ratelimit:Set rate limiting'
+                        'save:Save rules to file'
+                        'load:Load rules from file'
+                    )
+                    _describe 'firewall command' firewall_cmds
+                    ;;
+                quarantine)
+                    local -a quarantine_cmds
+                    quarantine_cmds=(
+                        'list:List quarantined items'
+                        'restore:Restore a file'
+                        'delete:Delete a quarantined item'
+                        'purge:Purge all quarantined items'
+                    )
+                    _describe 'quarantine command' quarantine_cmds
+                    ;;
+                backup)
+                    local -a backup_cmds
+                    backup_cmds=(
+                        'create:Create a backup'
+                        'restore:Restore from backup'
+                        'list:List available backups'
+                        'prune:Remove old backups'
+                    )
+                    _describe 'backup command' backup_cmds
+                    ;;
+                process)
+                    _arguments '1:pid: '
+                    ;;
+                network)
+                    _arguments '1:target: '
+                    ;;
+                ssh)
+                    _arguments \
+                        '(-t --threshold)'{-t,--threshold}'[Alert threshold]:threshold:' \
+                        '(-b --block-threshold)'{-b,--block-threshold}'[Block threshold]:threshold:' \
+                        '(-B --block)'{-B,--block}'[Auto-block attackers]'
+                    ;;
+                integrity)
+                    _arguments '(-b --baseline)'{-b,--baseline}'[Create baseline]'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_nkosi "$@"

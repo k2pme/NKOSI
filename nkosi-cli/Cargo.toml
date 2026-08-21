@@ -1,0 +1,23 @@
+[package]
+name = "nkosi-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nkosi-common = { path = "../nkosi-common" }
+nkosi-db = { path = "../nkosi-db" }
+nkosi-engines = { path = "../nkosi-engines" }
+nkosi-risk = { path = "../nkosi-risk" }
+nkosi-response = { path = "../nkosi-response" }
+nkosi-ti = { path = "../nkosi-ti" }
+nkosi-scanner = { path = "../nkosi-scanner" }
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+indicatif = "0.17"
+colored = "2"
+walkdir = "2"
+uuid.workspace = true
+chrono.workspace = true

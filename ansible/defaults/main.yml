@@ -1,0 +1,27 @@
+---
+# defaults/main.yml
+nkosi_version: "0.1.0"
+nkosi_install_dir: "/usr/local/bin"
+nkosi_config_dir: "/etc/nkosi"
+nkosi_data_dir: "/var/lib/nkosi"
+nkosi_log_dir: "/var/log/nkosi"
+nkosi_user: "nkosi"
+nkosi_group: "nkosi"
+
+# Service
+nkosi_service_enabled: true
+nkosi_service_state: started
+
+# Config
+nkosi_agent_name: "{{ inventory_hostname }}"
+nkosi_db_path: "{{ nkosi_data_dir }}/nkosi.db"
+nkosi_log_level: "info"
+
+# Firewall
+nkosi_firewall_enabled: true
+nkosi_ssh_block_threshold: 10
+
+# Notifications
+nkosi_notify_enabled: false
+nkosi_notify_email: ""
+nkosi_notify_webhook: ""

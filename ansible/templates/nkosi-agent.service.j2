@@ -1,0 +1,30 @@
+[Unit]
+Description=NKOSI Security Agent
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ nkosi_user }}
+Group={{ nkosi_group }}
+ExecStart={{ nkosi_install_dir }}/nkosi-agent-{{ nkosi_version }}
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=no
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ nkosi_data_dir }} {{ nkosi_log_dir }}
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Environment
+Environment=RUST_LOG={{ nkosi_log_level }}
+Environment=NKOSI_DB_PATH={{ nkosi_db_path }}
+
+[Install]
+WantedBy=multi-user.target

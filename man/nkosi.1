@@ -1,0 +1,118 @@
+.TH NKOSI 1 "2024" "NKOSI 0.1.0" "NKOSI User Manual"
+.SH NAME
+nkosi \- Linux endpoint security agent
+
+.SH SYNOPSIS
+.B nkosi
+[\fICOMMAND\fR] [\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+NKOSI is a comprehensive Linux endpoint security agent providing real-time
+threat detection, rootkit scanning, firewall management, and more.
+
+.SH COMMANDS
+.TP
+.B status
+Display current agent status and recent events.
+
+.TP
+.B scan \fIPATH\fR
+Scan a file or directory for threats.
+
+.TP
+.B quick
+Quick scan of critical system directories.
+
+.TP
+.B full
+Full system scan.
+
+.TP
+.B rootkit
+Scan for rootkits and system anomalies.
+
+.TP
+.B integrity [\fI--baseline\fR]
+Scan system integrity or create baseline.
+
+.TP
+.B kernel
+Scan loaded kernel modules for suspicious entries.
+
+.TP
+.B ssh [\fI--threshold N\fR] [\fI--block\fR]
+Scan SSH brute-force attempts in auth.log.
+
+.TP
+.B firewall \fISUBCOMMAND\fR
+Manage NKOSI firewall rules.
+.RS
+Subcommands: status, init, flush, block, unblock, whitelist, unwhitelist, ratelimit, save, load
+.RE
+
+.TP
+.B quarantine \fISUBCOMMAND\fR
+Manage quarantined files.
+.RS
+Subcommands: list, restore, delete, purge
+.RE
+
+.TP
+.B backup \fISUBCOMMAND\fR
+Manage configuration backups.
+.RS
+Subcommands: create, restore, list, prune
+.RE
+
+.TP
+.B update [\fI--force\fR]
+Update threat intelligence databases.
+
+.TP
+.B logs [\fILINES\fR]
+Display recent log entries.
+
+.TP
+.B process \fIPID\fR
+Scan a specific process.
+
+.TP
+.B network \fITARGET\fR
+Scan network connections for an IP/CIDR.
+
+.SH OPTIONS
+.TP
+.B -h, --help
+Print help information.
+
+.TP
+.B -V, --version
+Print version information.
+
+.SH FILES
+.TP
+.I /etc/nkosi/nkosi.toml
+Main configuration file.
+
+.TP
+.I /var/lib/nkosi/nkosi.db
+SQLite database for events and quarantine.
+
+.SH EXAMPLES
+.PP
+Scan for rootkits:
+.br
+$ nkosi rootkit
+
+.PP
+Block an IP address:
+.br
+$ nkosi firewall block 192.168.1.100
+
+.PP
+Create configuration backup:
+.br
+$ nkosi backup create
+
+.SH AUTHOR
+NKOSI Team

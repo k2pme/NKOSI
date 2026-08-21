@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # NKOSI Agent
+  nkosi-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nkosi-agent
+    restart: unless-stopped
+    privileged: true  # Required for iptables and /proc access
+    volumes:
+      - ./config/nkosi.toml:/etc/nkosi/nkosi.toml:ro
+      - nkosi-data:/var/lib/nkosi
+      - nkosi-logs:/var/log/nkosi
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /var/log:/var/log/host:ro
+    environment:
+      - RUST_LOG=info
+      - NKOSI_DB_PATH=/var/lib/nkosi/nkosi.db
+    ports:
+      - "8080:8080"
+    networks:
+      - nkosi-net
+
+  # NKOSI Central (optional - for multi-server)
+  nkosi-central:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nkosi-central
+    restart: unless-stopped
+    command: ["nkosi-api"]
+    volumes:
+      - ./config/nkosi.toml:/etc/nkosi/nkosi.toml:ro
+      - nkosi-central-data:/var/lib/nkosi
+    environment:
+      - RUST_LOG=info
+    ports:
+      - "8443:8080"
+    networks:
+      - nkosi-net
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: nkosi-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - nkosi-net
+
+volumes:
+  nkosi-data:
+  nkosi-logs:
+  nkosi-central-data:
+  redis-data:
+
+networks:
+  nkosi-net:
+    driver: bridge

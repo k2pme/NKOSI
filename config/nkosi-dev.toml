@@ -1,0 +1,33 @@
+[agent]
+name = "nkosi-dev"
+db_path = "data/nkosi.db"
+log_path = "data/nkosi.log"
+
+[monitors]
+watched_paths = ["/home", "/tmp"]
+excluded_paths = ["/home/*/.cache", "/proc", "/sys"]
+process_monitor_enabled = true
+network_monitor_enabled = true
+
+[engines]
+hash_algorithm = "sha256"
+yara_rules_path = "rules/"
+behavioral_analysis = true
+
+[response]
+quarantine_path = "data/quarantine"
+auto_quarantine = false
+
+[threat_intel]
+update_interval_hours = 24
+sources = []
+
+[logging]
+level = "info"
+file_path = "data/nkosi.log"
+max_size_mb = 50
+retention_days = 30
+
+[notification]
+enabled = false
+min_level = "high"

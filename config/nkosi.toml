@@ -1,0 +1,97 @@
+[agent]
+name = "nkosi-agent"
+db_path = "/var/lib/nkosi/nkosi.db"
+log_path = "/var/log/nkosi/agent.log"
+
+[monitors]
+# Zones d'entrée malwares + points de persistance
+watched_paths = [
+    "/home", "/tmp", "/var/tmp",
+    "/etc/cron.d", "/etc/cron.daily", "/etc/cron.hourly",
+    "/etc/cron.weekly", "/etc/cron.monthly",
+    "/etc/systemd/system", "/etc/init.d",
+    "/root/.config/autostart",
+    "/home/*/.config/autostart",
+]
+excluded_paths = ["/home/*/.cache", "/proc", "/sys"]
+process_monitor_enabled = true
+network_monitor_enabled = true
+
+[risk]
+low_threshold = 30
+suspicious_threshold = 70
+malicious_threshold = 70
+
+[risk.weights]
+hash = 80
+yara = 40
+static_analysis = 20
+behavior = 30
+network = 50
+
+[quarantine]
+path = "/var/lib/nkosi/quarantine"
+remove_permissions = true
+
+[threat_intel]
+update_interval_hours = 6
+
+[[threat_intel.sources]]
+name = "MalwareBazaar"
+url = "https://bazaar.abuse.ch/export/txt/sha256/recent/"
+enabled = true
+
+[[threat_intel.sources]]
+name = "ThreatFox"
+url = "https://threatfox.abuse.ch/export/csv/recent/"
+enabled = true
+
+[logging]
+level = "info"
+file_path = "/var/log/nkosi/agent.log"
+max_size_mb = 100
+retention_days = 30
+
+[notifications]
+enabled = true
+min_level = "warning"
+
+[notifications.console]
+colored = true
+
+# Exemple config email (décommenter pour activer)
+# [notifications.email]
+# smtp_host = "smtp.gmail.com"
+# smtp_port = 587
+# username = "your-email@gmail.com"
+# password = "your-app-password"
+# from = "NKOSI <your-email@gmail.com>"
+# to = ["admin@example.com"]
+# use_tls = true
+
+# Exemple config webhook Slack (décommenter pour activer)
+# [[notifications.webhook]]
+# name = "slack-security"
+# url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+# format = "slack"
+
+# Exemple config webhook Discord (décommenter pour activer)
+# [[notifications.webhook]]
+# name = "discord-security"
+# url = "https://discord.com/api/webhooks/YOUR/WEBHOOK/URL"
+# format = "discord"
+
+# Exemple config Telegram (décommenter pour activer)
+# [notifications.telegram]
+# bot_token = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+# chat_id = "-1001234567890"
+# parse_mode = "Markdown"
+
+# Exemple config SMS via Twilio (décommenter pour activer)
+# [notifications.sms]
+# provider = "twilio"
+# account_sid = "AC1234567890abcdef1234567890abcde"
+# auth_token = "your_auth_token"
+# from_number = "+1234567890"
+# to_numbers = ["+1987654321", "+1555555555"]
+# signalwire_host = null

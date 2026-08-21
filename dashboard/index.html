@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NKOSI Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-yellow: #eab308;
+            --accent-orange: #f97316;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: var(--bg-secondary);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--bg-card);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .header .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .container {
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--bg-card);
+        }
+
+        .stat-card .label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .stat-card .value.green { color: var(--accent-green); }
+        .stat-card .value.red { color: var(--accent-red); }
+        .stat-card .value.yellow { color: var(--accent-yellow); }
+        .stat-card .value.blue { color: var(--accent-blue); }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--bg-card);
+        }
+
+        .chart-card h3 {
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .table-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--bg-card);
+            overflow-x: auto;
+        }
+
+        .table-card h3 {
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            color: var(--text-secondary);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--bg-card);
+        }
+
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+
+        tr:hover {
+            background: var(--bg-card);
+        }
+
+        .severity-critical { color: var(--accent-red); }
+        .severity-high { color: var(--accent-orange); }
+        .severity-medium { color: var(--accent-yellow); }
+        .severity-low { color: var(--accent-green); }
+
+        .btn {
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #2563eb;
+        }
+
+        .btn-danger {
+            background: var(--accent-red);
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .tab {
+            padding: 0.5rem 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--bg-card);
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+
+        .tab.active {
+            background: var(--accent-blue);
+            color: white;
+            border-color: var(--accent-blue);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--accent-red);
+            padding: 1rem;
+            border-radius: 8px;
+            color: var(--accent-red);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>NKOSI Security Dashboard</h1>
+        <div class="status">
+            <div class="status-dot"></div>
+            <span id="agent-status">Connecté</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Actions -->
+        <div class="actions">
+            <button class="btn" onclick="refreshData()">↻ Actualiser</button>
+            <button class="btn" onclick="triggerScan('quick')">⚡ Scan rapide</button>
+            <button class="btn" onclick="triggerScan('rootkit')">🔍 Scan rootkit</button>
+            <button class="btn" onclick="triggerScan('kernel')"> Kernel</button>
+            <button class="btn btn-danger" onclick="triggerScan('ssh')"> SSH</button>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Score Global</div>
+                <div class="value green" id="global-score">100</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Menaces Détectées</div>
+                <div class="value red" id="threats-count">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Fichiers Quarantainés</div>
+                <div class="value yellow" id="quarantine-count">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Événements (24h)</div>
+                <div class="value blue" id="events-count">0</div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('overview')">Vue d'ensemble</div>
+            <div class="tab" onclick="showTab('events')">Événements</div>
+            <div class="tab" onclick="showTab('firewall')">Pare-feu</div>
+        </div>
+
+        <!-- Overview Tab -->
+        <div id="tab-overview" class="tab-content">
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>Événements par sévérité</h3>
+                    <canvas id="severityChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Activité récente</h3>
+                    <canvas id="activityChart"></canvas>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <h3>Dernières menaces</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Heure</th>
+                            <th>Type</th>
+                            <th>Source</th>
+                            <th>Sévérité</th>
+                            <th>Fichier</th>
+                        </tr>
+                    </thead>
+                    <tbody id="threats-table">
+                        <tr><td colspan="5" class="loading">Chargement...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Events Tab -->
+        <div id="tab-events" class="tab-content" style="display:none">
+            <div class="table-card">
+                <h3>Tous les événements</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Heure</th>
+                            <th>Type</th>
+                            <th>Module</th>
+                            <th>Sévérité</th>
+                            <th>Détails</th>
+                        </tr>
+                    </thead>
+                    <tbody id="events-table">
+                        <tr><td colspan="5" class="loading">Chargement...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Firewall Tab -->
+        <div id="tab-firewall" class="tab-content" style="display:none">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="label">Chaîne NKOSI</div>
+                    <div class="value" id="fw-chain">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Règles</div>
+                    <div class="value blue" id="fw-rules">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Blacklist</div>
+                    <div class="value red" id="fw-blacklist">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Whitelist</div>
+                    <div class="value green" id="fw-whitelist">0</div>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <h3>IPs bloquées</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>IP</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="firewall-table">
+                        <tr><td colspan="2" class="loading">Chargement...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        // Charts
+        let severityChart, activityChart;
+
+        function initCharts() {
+            const severityCtx = document.getElementById('severityChart').getContext('2d');
+            severityChart = new Chart(severityCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Critique', 'Élevée', 'Moyenne', 'Faible'],
+                    datasets: [{
+                        data: [0, 0, 0, 0],
+                        backgroundColor: ['#ef4444', '#f97316', '#eab308', '#22c55e']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+
+            const activityCtx = document.getElementById('activityChart').getContext('2d');
+            activityChart = new Chart(activityCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Événements',
+                        data: [],
+                        borderColor: '#3b82f6',
+                        tension: 0.4,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        async function fetchAPI(endpoint) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                if (!response.ok) throw new Error('Erreur réseau');
+                return await response.json();
+            } catch (error) {
+                console.error(`Erreur ${endpoint}:`, error);
+                return null;
+            }
+        }
+
+        async function refreshData() {
+            // Status
+            const status = await fetchAPI('/api/status');
+            if (status) {
+                document.getElementById('agent-status').textContent = 'Connecté';
+                document.getElementById('global-score').textContent = '100';
+            }
+
+            // Events
+            const events = await fetchAPI('/api/events?limit=100');
+            if (events) {
+                document.getElementById('events-count').textContent = events.total;
+                updateSeverityChart(events.events);
+                updateActivityChart(events.events);
+                updateThreatsTable(events.events);
+                updateEventsTable(events.events);
+            }
+
+            // Quarantine
+            const quarantine = await fetchAPI('/api/quarantine');
+            if (quarantine) {
+                document.getElementById('quarantine-count').textContent = quarantine.total;
+            }
+
+            // Firewall
+            const fw = await fetchAPI('/api/firewall/status');
+            if (fw) {
+                document.getElementById('fw-chain').textContent = fw.nkosi_chain_exists ? '✓' : '✗';
+                document.getElementById('fw-rules').textContent = fw.rules_count;
+                document.getElementById('fw-blacklist').textContent = fw.blacklist_count;
+                document.getElementById('fw-whitelist').textContent = fw.whitelist_count;
+            }
+        }
+
+        function updateSeverityChart(events) {
+            const counts = [0, 0, 0, 0];
+            events.forEach(e => {
+                switch(e.severity) {
+                    case 'Critical': counts[0]++; break;
+                    case 'High': counts[1]++; break;
+                    case 'Medium': counts[2]++; break;
+                    case 'Low': counts[3]++; break;
+                }
+            });
+            severityChart.data.datasets[0].data = counts;
+            severityChart.update();
+        }
+
+        function updateActivityChart(events) {
+            // Group by hour
+            const hourly = {};
+            events.forEach(e => {
+                const hour = new Date(e.timestamp).getHours();
+                hourly[hour] = (hourly[hour] || 0) + 1;
+            });
+
+            const labels = Object.keys(hourly).sort((a,b) => a-b).map(h => `${h}h`);
+            const data = Object.keys(hourly).sort((a,b) => a-b).map(h => hourly[h]);
+
+            activityChart.data.labels = labels;
+            activityChart.data.datasets[0].data = data;
+            activityChart.update();
+        }
+
+        function updateThreatsTable(events) {
+            const tbody = document.getElementById('threats-table');
+            const threats = events.filter(e => ['Critical', 'High', 'Medium'].includes(e.severity));
+
+            if (threats.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--accent-green)">Aucune menace détectée</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = threats.slice(0, 10).map(e => `
+                <tr>
+                    <td>${new Date(e.timestamp).toLocaleTimeString('fr')}</td>
+                    <td>${e.event_type}</td>
+                    <td>${e.source_module}</td>
+                    <td class="severity-${e.severity.toLowerCase()}">${e.severity}</td>
+                    <td>${e.file_path || e.remote_ip || '—'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateEventsTable(events) {
+            const tbody = document.getElementById('events-table');
+            if (events.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="loading">Aucun événement</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = events.map(e => `
+                <tr>
+                    <td>${new Date(e.timestamp).toLocaleTimeString('fr')}</td>
+                    <td>${e.event_type}</td>
+                    <td>${e.source_module}</td>
+                    <td class="severity-${e.severity.toLowerCase()}">${e.severity}</td>
+                    <td>${e.file_path || e.remote_ip || e.domain || '—'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function triggerScan(type) {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '⏳ Scan...';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/scan`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scan_type: type })
+                });
+                const result = await response.json();
+                alert(`Scan terminé: ${result.message}`);
+                refreshData();
+            } catch (error) {
+                alert('Erreur: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = type === 'quick' ? '⚡ Scan rapide' :
+                                  type === 'rootkit' ? '🔍 Scan rootkit' :
+                                  type === 'kernel' ? ' Kernel' : ' SSH';
+            }
+        }
+
+        function showTab(name) {
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+
+            document.getElementById(`tab-${name}`).style.display = 'block';
+            event.target.classList.add('active');
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            refreshData();
+            setInterval(refreshData, 30000); // Auto-refresh every 30s
+        });
+    </script>
+</body>
+</html>
