@@ -1,4 +1,4 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -36,11 +36,15 @@ pub async fn get_status(_data: web::Data<Arc<AppState>>) -> HttpResponse {
         std::fs::read_to_string(health_file)
             .ok()
             .and_then(|s| serde_json::from_str::<Vec<nkosi_common::types::ModuleHealth>>(&s).ok())
-            .map(|mh| mh.into_iter().map(|m| ModuleHealthStatus {
-                name: m.name,
-                status: format!("{:?}", m.status),
-                message: m.message,
-            }).collect())
+            .map(|mh| {
+                mh.into_iter()
+                    .map(|m| ModuleHealthStatus {
+                        name: m.name,
+                        status: format!("{:?}", m.status),
+                        message: m.message,
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     } else {
         vec![ModuleHealthStatus {
@@ -52,7 +56,10 @@ pub async fn get_status(_data: web::Data<Arc<AppState>>) -> HttpResponse {
 
     let agent_status = if modules.iter().any(|m| m.status == "Failed") {
         "degraded"
-    } else if modules.iter().all(|m| m.status == "Ok" || m.status == "Disabled") {
+    } else if modules
+        .iter()
+        .all(|m| m.status == "Ok" || m.status == "Disabled")
+    {
         "running"
     } else {
         "unknown"

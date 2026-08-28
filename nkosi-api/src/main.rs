@@ -1,40 +1,59 @@
-mod state;
 mod handlers;
+mod state;
 
 use actix_cors::Cors;
-use actix_web::{web, App, HttpServer, middleware};
 use actix_files::Files;
+use actix_web::{App, HttpServer, middleware, web};
 use std::sync::Arc;
 use tracing::info;
 
 use nkosi_common::config::NkosiConfig;
 use nkosi_db::Database;
 
-use prometheus::{Encoder, TextEncoder, IntCounter, IntGauge, Registry};
 use lazy_static::lazy_static;
+use prometheus::{Encoder, IntCounter, IntGauge, Registry, TextEncoder};
 
-use crate::state::{ApiConfig, ApiKeyAuth, IpRateLimiter, AppState};
+use crate::state::{ApiConfig, ApiKeyAuth, AppState, IpRateLimiter};
 
 lazy_static! {
-    pub static ref EVENTS_TOTAL: IntCounter = IntCounter::new("nkosi_events_total", "Total events processed").unwrap();
-    pub static ref THREATS_DETECTED: IntCounter = IntCounter::new("nkosi_threats_detected", "Total threats detected").unwrap();
-    pub static ref SCANS_TOTAL: IntCounter = IntCounter::new("nkosi_scans_total", "Total scans performed").unwrap();
-    pub static ref QUARANTINE_FILES: IntGauge = IntGauge::new("nkosi_quarantine_files", "Files in quarantine").unwrap();
+    pub static ref EVENTS_TOTAL: IntCounter =
+        IntCounter::new("nkosi_events_total", "Total events processed").unwrap();
+    pub static ref THREATS_DETECTED: IntCounter =
+        IntCounter::new("nkosi_threats_detected", "Total threats detected").unwrap();
+    pub static ref SCANS_TOTAL: IntCounter =
+        IntCounter::new("nkosi_scans_total", "Total scans performed").unwrap();
+    pub static ref QUARANTINE_FILES: IntGauge =
+        IntGauge::new("nkosi_quarantine_files", "Files in quarantine").unwrap();
     pub static ref REGISTRY: Registry = Registry::new();
+}
+
+fn register_metrics() {
+    for metric in [
+        Box::new(EVENTS_TOTAL.clone()) as Box<dyn prometheus::core::Collector>,
+        Box::new(THREATS_DETECTED.clone()),
+        Box::new(SCANS_TOTAL.clone()),
+        Box::new(QUARANTINE_FILES.clone()),
+    ] {
+        // Metrics may already be registered in tests or embedded deployments.
+        if let Err(e) = REGISTRY.register(metric) {
+            tracing::warn!("Unable to register Prometheus metric: {}", e);
+        }
+    }
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .init();
+    tracing_subscriber::fmt().with_env_filter("info").init();
+    register_metrics();
 
     let api_keys_env = std::env::var("NKOSI_API_KEYS").unwrap_or_default();
     let allow_default = std::env::var("NKOSI_ALLOW_DEFAULT_KEY").unwrap_or_default() == "1";
 
     if api_keys_env.is_empty() && !allow_default {
         eprintln!("ERREUR: Aucune API key configurée.");
-        eprintln!("Définissez NKOSI_API_KEYS=clé1,clé2 ou NKOSI_ALLOW_DEFAULT_KEY=1 pour le mode dev.");
+        eprintln!(
+            "Définissez NKOSI_API_KEYS=clé1,clé2 ou NKOSI_ALLOW_DEFAULT_KEY=1 pour le mode dev."
+        );
         std::process::exit(1);
     }
 
@@ -97,18 +116,42 @@ async fn main() -> std::io::Result<()> {
             .route("/metrics", web::get().to(get_metrics))
             // Protected (auth checked inside handlers)
             .route("/api/events", web::get().to(handlers::events::get_events))
-            .route("/api/quarantine", web::get().to(handlers::quarantine::get_quarantine))
+            .route(
+                "/api/quarantine",
+                web::get().to(handlers::quarantine::get_quarantine),
+            )
             .route("/api/scan", web::post().to(handlers::scan::trigger_scan))
-            .route("/api/firewall/status", web::get().to(handlers::firewall::get_firewall_status))
-            .route("/api/firewall/block", web::post().to(handlers::firewall::block_ip))
-            .route("/api/firewall/unblock/{ip}", web::post().to(handlers::firewall::unblock_ip))
+            .route(
+                "/api/firewall/status",
+                web::get().to(handlers::firewall::get_firewall_status),
+            )
+            .route(
+                "/api/firewall/block",
+                web::post().to(handlers::firewall::block_ip),
+            )
+            .route(
+                "/api/firewall/unblock/{ip}",
+                web::post().to(handlers::firewall::unblock_ip),
+            )
             // Multi-agent (F2.11)
             .route("/api/agents", web::get().to(handlers::agents::get_agents))
-            .route("/api/agents/{id}", web::get().to(handlers::agents::get_agent_detail))
-            .route("/api/events/filtered", web::get().to(handlers::events::get_events_filtered))
+            .route(
+                "/api/agents/{id}",
+                web::get().to(handlers::agents::get_agent_detail),
+            )
+            .route(
+                "/api/events/filtered",
+                web::get().to(handlers::events::get_events_filtered),
+            )
             .route("/api/alertes", web::get().to(handlers::agents::get_alertes))
-            .route("/api/stats/consolidated", web::get().to(handlers::agents::get_consolidated_stats))
-            .route("/api/report/consolidated", web::get().to(handlers::agents::get_consolidated_report))
+            .route(
+                "/api/stats/consolidated",
+                web::get().to(handlers::agents::get_consolidated_stats),
+            )
+            .route(
+                "/api/report/consolidated",
+                web::get().to(handlers::agents::get_consolidated_report),
+            )
             // Dashboard (public)
             .service(Files::new("/", "./dashboard").index_file("index.html"))
     })

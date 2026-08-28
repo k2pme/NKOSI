@@ -87,7 +87,7 @@ impl Default for RiskConfig {
     fn default() -> Self {
         Self {
             low_threshold: 30,
-            suspicious_threshold: 70,
+            suspicious_threshold: 50,
             malicious_threshold: 70,
             weights: RiskWeights::default(),
         }
@@ -144,8 +144,21 @@ impl Default for ThreatIntelConfig {
         Self {
             update_interval_hours: 6,
             sources: vec![
-                TiSource { name: "MalwareBazaar".to_string(), url: "https://bazaar.abuse.ch/export/txt/sha256/recent/".to_string(), enabled: true },
-                TiSource { name: "ThreatFox".to_string(), url: "https://threatfox.abuse.ch/export/csv/recent/".to_string(), enabled: true },
+                TiSource {
+                    name: "MalwareBazaar".to_string(),
+                    url: "https://bazaar.abuse.ch/export/txt/sha256/recent/".to_string(),
+                    enabled: true,
+                },
+                TiSource {
+                    name: "ThreatFox".to_string(),
+                    url: "https://threatfox.abuse.ch/api/v1/".to_string(),
+                    enabled: true,
+                },
+                TiSource {
+                    name: "URLhaus".to_string(),
+                    url: "https://urlhaus.abuse.ch/csv/recent/".to_string(),
+                    enabled: true,
+                },
             ],
         }
     }

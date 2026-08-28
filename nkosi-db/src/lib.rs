@@ -1,8 +1,8 @@
-pub mod schema;
 pub mod repositories;
+pub mod schema;
 
-pub use schema::Database;
 pub use repositories::*;
+pub use schema::Database;
 
 #[cfg(test)]
 mod tests {
@@ -93,6 +93,28 @@ mod tests {
         let active = repo.get_active().unwrap();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].original_path, "/tmp/malware.exe");
+    }
+
+    #[test]
+    fn test_get_enabled_sha256_values() {
+        let db = setup_test_db();
+        let repo = ThreatIndicatorRepository::new(&db);
+        let value = "a".repeat(64);
+        let indicator = ThreatIndicator {
+            id: Uuid::new_v4(),
+            indicator_type: IndicatorType::Sha256,
+            value: value.clone(),
+            malware_family: None,
+            confidence: 1.0,
+            severity: Severity::Critical,
+            source: "test".to_string(),
+            first_seen: Utc::now(),
+            last_seen: Utc::now(),
+            tags: vec![],
+            enabled: true,
+        };
+        repo.insert(&indicator).unwrap();
+        assert_eq!(repo.get_enabled_sha256_values().unwrap(), vec![value]);
     }
 
     #[test]

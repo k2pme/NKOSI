@@ -17,7 +17,9 @@ pub struct UpdateConfig {
 impl Default for UpdateConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            // Automatic binary replacement is intentionally opt-in until a
+            // signed update channel is implemented.
+            enabled: false,
             check_interval_secs: 3600, // 1 hour
             auto_apply: false,
             backup_before_update: true,
@@ -60,7 +62,8 @@ pub struct AutoUpdater {
 impl AutoUpdater {
     pub fn new(config: UpdateConfig) -> Self {
         let current_version = env!("CARGO_PKG_VERSION").to_string();
-        let binary_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/bin/nkosi"));
+        let binary_path =
+            std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/bin/nkosi"));
 
         Self {
             config,
@@ -77,7 +80,10 @@ impl AutoUpdater {
         let latest_version = self.fetch_latest_version()?;
 
         if latest_version > self.current_version {
-            info!("New version available: {} -> {}", self.current_version, latest_version);
+            info!(
+                "New version available: {} -> {}",
+                self.current_version, latest_version
+            );
             Ok(Some(VersionInfo {
                 version: latest_version,
                 download_url: format!("{}/download/{}", self.config.update_url, "nkosi"),
@@ -150,8 +156,7 @@ impl AutoUpdater {
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
         let backup_path = format!("{}.backup.{}", self.binary_path.display(), timestamp);
 
-        std::fs::copy(&self.binary_path, &backup_path)
-            .context("Failed to backup binary")?;
+        std::fs::copy(&self.binary_path, &backup_path).context("Failed to backup binary")?;
 
         Ok(backup_path)
     }
@@ -161,7 +166,6 @@ impl AutoUpdater {
         info!("Downloading update from: {}", url);
 
         // In a real implementation, this would download the binary
-        // For now, we'll just log
         warn!("Auto-update download not implemented yet (URL: {})", url);
 
         // Simulate download
@@ -169,14 +173,13 @@ impl AutoUpdater {
         //     .args(["-L", "-o", self.binary_path.to_str().unwrap(), url])
         //     .output()?;
 
-        Ok(())
+        anyhow::bail!("Auto-update is unavailable: no verified download implementation")
     }
 
     /// Rollback to previous version
     fn rollback(&self, backup_path: &str) -> Result<()> {
         info!("Rolling back to: {}", backup_path);
-        std::fs::copy(backup_path, &self.binary_path)
-            .context("Failed to rollback binary")?;
+        std::fs::copy(backup_path, &self.binary_path).context("Failed to rollback binary")?;
         Ok(())
     }
 
@@ -203,7 +206,7 @@ mod tests {
     #[test]
     fn test_update_config_default() {
         let config = UpdateConfig::default();
-        assert!(config.enabled);
+        assert!(!config.enabled);
         assert_eq!(config.check_interval_secs, 3600);
         assert!(!config.auto_apply);
     }
@@ -212,7 +215,7 @@ mod tests {
     fn test_auto_updater_creation() {
         let config = UpdateConfig::default();
         let updater = AutoUpdater::new(config);
-        assert!(updater.is_enabled());
+        assert!(!updater.is_enabled());
         assert_eq!(updater.check_interval(), 3600);
     }
 }

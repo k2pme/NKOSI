@@ -1,8 +1,8 @@
-use actix_web::{web, HttpRequest, HttpResponse};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Serialize;
 use std::sync::Arc;
 
-use crate::state::{AppState, ErrorResponse, get_client_ip, extract_api_key};
+use crate::state::{AppState, ErrorResponse, extract_api_key, get_client_ip};
 use nkosi_common::types::Severity;
 
 #[derive(Serialize)]
@@ -69,70 +69,119 @@ fn event_to_alert(e: &nkosi_common::types::Event) -> AlertItem {
 pub async fn get_agents(data: web::Data<Arc<AppState>>, req: HttpRequest) -> HttpResponse {
     let client_ip = get_client_ip(&req);
     if !data.rate_limiter.check(&client_ip).await {
-        return HttpResponse::TooManyRequests().json(ErrorResponse { error: "Rate limit exceeded".to_string(), code: 429 });
+        return HttpResponse::TooManyRequests().json(ErrorResponse {
+            error: "Rate limit exceeded".to_string(),
+            code: 429,
+        });
     }
     let key = extract_api_key(&req);
     if !data.api_key_auth.validate(&key) {
-        return HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid or missing X-API-Key header".to_string(), code: 401 });
+        return HttpResponse::Unauthorized().json(ErrorResponse {
+            error: "Invalid or missing X-API-Key header".to_string(),
+            code: 401,
+        });
     }
 
     let repo = nkosi_db::AgentRepository::new(&data.db);
     match repo.get_all() {
-        Ok(agents) => HttpResponse::Ok().json(AgentsResponse { total: agents.len(), agents }),
-        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse { error: e.to_string(), code: 500 }),
+        Ok(agents) => HttpResponse::Ok().json(AgentsResponse {
+            total: agents.len(),
+            agents,
+        }),
+        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+            error: e.to_string(),
+            code: 500,
+        }),
     }
 }
 
-pub async fn get_agent_detail(data: web::Data<Arc<AppState>>, req: HttpRequest, path: web::Path<String>) -> HttpResponse {
+pub async fn get_agent_detail(
+    data: web::Data<Arc<AppState>>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> HttpResponse {
     let client_ip = get_client_ip(&req);
     if !data.rate_limiter.check(&client_ip).await {
-        return HttpResponse::TooManyRequests().json(ErrorResponse { error: "Rate limit exceeded".to_string(), code: 429 });
+        return HttpResponse::TooManyRequests().json(ErrorResponse {
+            error: "Rate limit exceeded".to_string(),
+            code: 429,
+        });
     }
     let key = extract_api_key(&req);
     if !data.api_key_auth.validate(&key) {
-        return HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid or missing X-API-Key header".to_string(), code: 401 });
+        return HttpResponse::Unauthorized().json(ErrorResponse {
+            error: "Invalid or missing X-API-Key header".to_string(),
+            code: 401,
+        });
     }
 
     let agent_id = path.into_inner();
     let repo = nkosi_db::AgentRepository::new(&data.db);
     match repo.get_by_id(&agent_id) {
         Ok(agent) => HttpResponse::Ok().json(AgentDetailResponse { agent }),
-        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse { error: e.to_string(), code: 500 }),
+        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+            error: e.to_string(),
+            code: 500,
+        }),
     }
 }
 
 pub async fn get_alertes(data: web::Data<Arc<AppState>>, req: HttpRequest) -> HttpResponse {
     let client_ip = get_client_ip(&req);
     if !data.rate_limiter.check(&client_ip).await {
-        return HttpResponse::TooManyRequests().json(ErrorResponse { error: "Rate limit exceeded".to_string(), code: 429 });
+        return HttpResponse::TooManyRequests().json(ErrorResponse {
+            error: "Rate limit exceeded".to_string(),
+            code: 429,
+        });
     }
     let key = extract_api_key(&req);
     if !data.api_key_auth.validate(&key) {
-        return HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid or missing X-API-Key header".to_string(), code: 401 });
+        return HttpResponse::Unauthorized().json(ErrorResponse {
+            error: "Invalid or missing X-API-Key header".to_string(),
+            code: 401,
+        });
     }
 
     let repo = nkosi_db::AgentRepository::new(&data.db);
     match repo.get_events_filtered(None, None, None, 500) {
         Ok(events) => {
-            let alerts: Vec<AlertItem> = events.iter()
-                .filter(|e| matches!(e.severity, Severity::Critical | Severity::High | Severity::Medium))
+            let alerts: Vec<AlertItem> = events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.severity,
+                        Severity::Critical | Severity::High | Severity::Medium
+                    )
+                })
                 .map(event_to_alert)
                 .collect();
             let total = alerts.len();
             HttpResponse::Ok().json(AlertsResponse { total, alerts })
         }
-        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse { error: e.to_string(), code: 500 }),
+        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+            error: e.to_string(),
+            code: 500,
+        }),
     }
 }
 
-pub async fn get_consolidated_stats(data: web::Data<Arc<AppState>>, req: HttpRequest) -> HttpResponse {
+pub async fn get_consolidated_stats(
+    data: web::Data<Arc<AppState>>,
+    req: HttpRequest,
+) -> HttpResponse {
     let client_ip = get_client_ip(&req);
     if !data.rate_limiter.check(&client_ip).await {
-        return HttpResponse::TooManyRequests().json(ErrorResponse { error: "Rate limit exceeded".to_string(), code: 429 });
+        return HttpResponse::TooManyRequests().json(ErrorResponse {
+            error: "Rate limit exceeded".to_string(),
+            code: 429,
+        });
     }
     let key = extract_api_key(&req);
     if !data.api_key_auth.validate(&key) {
-        return HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid or missing X-API-Key header".to_string(), code: 401 });
+        return HttpResponse::Unauthorized().json(ErrorResponse {
+            error: "Invalid or missing X-API-Key header".to_string(),
+            code: 401,
+        });
     }
 
     let repo = nkosi_db::AgentRepository::new(&data.db);
@@ -145,18 +194,30 @@ pub async fn get_consolidated_stats(data: web::Data<Arc<AppState>>, req: HttpReq
             total_threats: stats.total_threats,
             total_quarantine: stats.total_quarantine,
         }),
-        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse { error: e.to_string(), code: 500 }),
+        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+            error: e.to_string(),
+            code: 500,
+        }),
     }
 }
 
-pub async fn get_consolidated_report(data: web::Data<Arc<AppState>>, req: HttpRequest) -> HttpResponse {
+pub async fn get_consolidated_report(
+    data: web::Data<Arc<AppState>>,
+    req: HttpRequest,
+) -> HttpResponse {
     let client_ip = get_client_ip(&req);
     if !data.rate_limiter.check(&client_ip).await {
-        return HttpResponse::TooManyRequests().json(ErrorResponse { error: "Rate limit exceeded".to_string(), code: 429 });
+        return HttpResponse::TooManyRequests().json(ErrorResponse {
+            error: "Rate limit exceeded".to_string(),
+            code: 429,
+        });
     }
     let key = extract_api_key(&req);
     if !data.api_key_auth.validate(&key) {
-        return HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid or missing X-API-Key header".to_string(), code: 401 });
+        return HttpResponse::Unauthorized().json(ErrorResponse {
+            error: "Invalid or missing X-API-Key header".to_string(),
+            code: 401,
+        });
     }
 
     let repo = nkosi_db::AgentRepository::new(&data.db);
@@ -164,23 +225,36 @@ pub async fn get_consolidated_report(data: web::Data<Arc<AppState>>, req: HttpRe
     let agents = repo.get_all().unwrap_or_default();
     let alerts_result = repo.get_events_filtered(None, None, None, 100);
 
-    let recent_alerts = alerts_result.unwrap_or_default().iter()
-        .filter(|e| matches!(e.severity, Severity::Critical | Severity::High | Severity::Medium))
+    let recent_alerts = alerts_result
+        .unwrap_or_default()
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.severity,
+                Severity::Critical | Severity::High | Severity::Medium
+            )
+        })
         .map(event_to_alert)
         .collect();
 
     HttpResponse::Ok().json(ConsolidatedReportResponse {
-        stats: stats.map(|s| ConsolidatedStatsResponse {
-            total_agents: s.total_agents,
-            online_agents: s.online_agents,
-            offline_agents: s.offline_agents,
-            total_events: s.total_events,
-            total_threats: s.total_threats,
-            total_quarantine: s.total_quarantine,
-        }).unwrap_or(ConsolidatedStatsResponse {
-            total_agents: 0, online_agents: 0, offline_agents: 0,
-            total_events: 0, total_threats: 0, total_quarantine: 0,
-        }),
+        stats: stats
+            .map(|s| ConsolidatedStatsResponse {
+                total_agents: s.total_agents,
+                online_agents: s.online_agents,
+                offline_agents: s.offline_agents,
+                total_events: s.total_events,
+                total_threats: s.total_threats,
+                total_quarantine: s.total_quarantine,
+            })
+            .unwrap_or(ConsolidatedStatsResponse {
+                total_agents: 0,
+                online_agents: 0,
+                offline_agents: 0,
+                total_events: 0,
+                total_threats: 0,
+                total_quarantine: 0,
+            }),
         agents,
         recent_alerts,
     })

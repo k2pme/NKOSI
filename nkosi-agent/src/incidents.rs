@@ -1,5 +1,5 @@
 use nkosi_common::types::*;
-use nkosi_db::{Database, IncidentRepository, DetectionRepository, EventRepository};
+use nkosi_db::{Database, DetectionRepository, EventRepository, IncidentRepository};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{info, warn};
@@ -42,8 +42,14 @@ impl IncidentManager {
         }
         let avg_score = total_score / detections.len() as u32;
 
-        let file_key = event.file_path.clone().unwrap_or_else(|| "unknown".to_string());
-        let pid_key = event.pid.map(|p| p.to_string()).unwrap_or_else(|| "no_pid".to_string());
+        let file_key = event
+            .file_path
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        let pid_key = event
+            .pid
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "no_pid".to_string());
         let key = format!("{}:{}", file_key, pid_key);
 
         if let Some(pending) = self.pending.get_mut(&key) {
@@ -131,8 +137,13 @@ impl IncidentManager {
             }
         }
 
-        info!("Incident {} created: score={}, status={:?}, detections={}",
-            pending.id, pending.global_score, pending.status, pending.detections.len());
+        info!(
+            "Incident {} created: score={}, status={:?}, detections={}",
+            pending.id,
+            pending.global_score,
+            pending.status,
+            pending.detections.len()
+        );
     }
 
     async fn finalize_incident(&mut self, pending: &PendingIncident) {
@@ -148,10 +159,14 @@ impl IncidentManager {
     }
 
     fn build_summary(&self, pending: &PendingIncident) -> String {
-        let engines: Vec<String> = pending.detections.iter()
+        let engines: Vec<String> = pending
+            .detections
+            .iter()
             .map(|d| format!("{:?}", d.detection_engine))
             .collect();
-        let rules: Vec<String> = pending.detections.iter()
+        let rules: Vec<String> = pending
+            .detections
+            .iter()
             .filter_map(|d| d.rule_name.clone())
             .collect();
 
@@ -207,7 +222,9 @@ impl IncidentManager {
     #[allow(dead_code)]
     pub async fn prune_stale(&mut self) {
         let now = chrono::Utc::now();
-        let stale_keys: Vec<String> = self.pending.keys()
+        let stale_keys: Vec<String> = self
+            .pending
+            .keys()
             .filter(|key| {
                 if let Some(pending) = self.pending.get(*key) {
                     (now - pending.created_at).num_seconds() > INCIDENT_WINDOW_SECS * 2

@@ -3,6 +3,7 @@ version: '3.8'
 services:
   # NKOSI Agent
   nkosi-agent:
+    # Demonstration container only: use the systemd service for host protection.
     build:
       context: .
       dockerfile: Dockerfile
@@ -25,8 +26,7 @@ services:
     environment:
       - RUST_LOG=info
       - NKOSI_DB_PATH=/var/lib/nkosi/nkosi.db
-    ports:
-      - "8080:8080"
+      - NKOSI_CENTRAL_TOKEN=${NKOSI_CENTRAL_TOKEN:-}
     networks:
       - nkosi-net
 
@@ -43,6 +43,7 @@ services:
       - nkosi-central-data:/var/lib/nkosi
     environment:
       - RUST_LOG=info
+      - NKOSI_CENTRAL_TOKEN=${NKOSI_CENTRAL_TOKEN:-}
     ports:
       - "50051:50051"
     networks:
@@ -59,6 +60,7 @@ services:
     environment:
       - RUST_LOG=info
       - NKOSI_CENTRAL_ADDR=nkosi-central:50051
+      - NKOSI_CENTRAL_TOKEN=${NKOSI_CENTRAL_TOKEN:-}
     depends_on:
       - nkosi-central
     ports:

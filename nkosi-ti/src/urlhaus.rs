@@ -5,8 +5,9 @@ use tracing::{info, warn};
 
 use crate::integrity_check;
 
+#[derive(Clone)]
 pub struct UrlhausClient {
-    base_url: String,
+    url: String,
 }
 
 impl Default for UrlhausClient {
@@ -18,16 +19,18 @@ impl Default for UrlhausClient {
 impl UrlhausClient {
     pub fn new() -> Self {
         Self {
-            base_url: "https://urlhaus.abuse.ch".to_string(),
+            url: "https://urlhaus.abuse.ch/csv/recent/".to_string(),
         }
+    }
+
+    pub fn with_url(url: String) -> Self {
+        Self { url }
     }
 
     pub async fn fetch_recent_urls(&self) -> Result<Vec<ThreatIndicator>> {
         info!("Fetching recent URLs from URLhaus");
 
-        let url = format!("{}/csv/recent/", self.base_url);
-
-        match reqwest::get(&url).await {
+        match reqwest::get(&self.url).await {
             Ok(response) => {
                 if response.status().is_success() {
                     let text = response.text().await?;
@@ -142,7 +145,8 @@ mod tests {
 
     #[test]
     fn parse_csv_with_comments() {
-        let csv = "# This is a comment\n12345,2024-01-01,http://evil.com/mal,ok,malware,,2024-01-01\n";
+        let csv =
+            "# This is a comment\n12345,2024-01-01,http://evil.com/mal,ok,malware,,2024-01-01\n";
         let indicators = client().parse_csv(csv);
         assert_eq!(indicators.len(), 1);
     }

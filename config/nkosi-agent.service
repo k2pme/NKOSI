@@ -13,7 +13,9 @@ Group=root
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
+# The agent must read its configured /home watch paths; prohibit writes while
+# retaining visibility instead of hiding them entirely.
+ProtectHome=read-only
 ReadWritePaths=/var/lib/nkosi /var/log/nkosi
 PrivateTmp=true
 RuntimeDirectory=nkosi

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::net::IpAddr;
 use tracing::{info, warn};
 
 const NKOSI_CHAIN: &str = "NKOSI_INPUT";
@@ -61,51 +62,58 @@ impl FirewallManager {
     pub fn init_chains(&self) -> Result<()> {
         info!("Initializing NKOSI iptables chains");
 
-        // Create NKOSI_INPUT chain (skip if exists)
-        self.run_iptables(&["-N", NKOSI_CHAIN], false)?;
+        if !self.chain_exists(NKOSI_CHAIN)? {
+            self.run_iptables(&["-N", NKOSI_CHAIN], true)?;
+        }
         // Jump to NKOSI_INPUT from INPUT
-        self.run_iptables(&["-C", "INPUT", "-j", NKOSI_CHAIN], false)
-            .or_else(|_| self.run_iptables(&["-I", "INPUT", "1", "-j", NKOSI_CHAIN], false))?;
+        if !self.rule_exists(&["-C", "INPUT", "-j", NKOSI_CHAIN]) {
+            self.run_iptables(&["-I", "INPUT", "1", "-j", NKOSI_CHAIN], true)?;
+        }
 
-        // Create blacklist chain
-        self.run_iptables(&["-N", NKOSI_BLACKLIST_CHAIN], false)?;
-        self.run_iptables(
-            &["-C", NKOSI_CHAIN, "-j", NKOSI_BLACKLIST_CHAIN],
-            false,
-        )
-        .or_else(|_| {
-            self.run_iptables(
-                &["-A", NKOSI_CHAIN, "-j", NKOSI_BLACKLIST_CHAIN],
-                false,
-            )
-        })?;
+        if !self.chain_exists(NKOSI_BLACKLIST_CHAIN)? {
+            self.run_iptables(&["-N", NKOSI_BLACKLIST_CHAIN], true)?;
+        }
+        if !self.rule_exists(&["-C", NKOSI_CHAIN, "-j", NKOSI_BLACKLIST_CHAIN]) {
+            self.run_iptables(&["-A", NKOSI_CHAIN, "-j", NKOSI_BLACKLIST_CHAIN], true)?;
+        }
 
-        // Create whitelist chain
-        self.run_iptables(&["-N", NKOSI_WHITELIST_CHAIN], false)?;
-        self.run_iptables(
-            &["-C", NKOSI_CHAIN, "-j", NKOSI_WHITELIST_CHAIN],
-            false,
-        )
-        .or_else(|_| {
-            self.run_iptables(
-                &["-A", NKOSI_CHAIN, "-j", NKOSI_WHITELIST_CHAIN],
-                false,
-            )
-        })?;
+        if !self.chain_exists(NKOSI_WHITELIST_CHAIN)? {
+            self.run_iptables(&["-N", NKOSI_WHITELIST_CHAIN], true)?;
+        }
+        if !self.rule_exists(&["-C", NKOSI_CHAIN, "-j", NKOSI_WHITELIST_CHAIN]) {
+            self.run_iptables(&["-A", NKOSI_CHAIN, "-j", NKOSI_WHITELIST_CHAIN], true)?;
+        }
 
         // Allow established connections
-        self.run_iptables(
-            &[
-                "-A", NKOSI_CHAIN, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT",
-            ],
-            true,
-        )?;
+        if !self.rule_exists(&[
+            "-C",
+            NKOSI_CHAIN,
+            "-m",
+            "conntrack",
+            "--ctstate",
+            "ESTABLISHED,RELATED",
+            "-j",
+            "ACCEPT",
+        ]) {
+            self.run_iptables(
+                &[
+                    "-A",
+                    NKOSI_CHAIN,
+                    "-m",
+                    "conntrack",
+                    "--ctstate",
+                    "ESTABLISHED,RELATED",
+                    "-j",
+                    "ACCEPT",
+                ],
+                true,
+            )?;
+        }
 
         // Allow loopback
-        self.run_iptables(
-            &["-A", NKOSI_CHAIN, "-i", "lo", "-j", "ACCEPT"],
-            true,
-        )?;
+        if !self.rule_exists(&["-C", NKOSI_CHAIN, "-i", "lo", "-j", "ACCEPT"]) {
+            self.run_iptables(&["-A", NKOSI_CHAIN, "-i", "lo", "-j", "ACCEPT"], true)?;
+        }
 
         info!("NKOSI chains initialized");
         Ok(())
@@ -123,6 +131,8 @@ impl FirewallManager {
     /// Block an IP address
     pub fn block_ip(&self, ip: &str, comment: Option<&str>, temp: bool) -> Result<()> {
         info!("Blocking IP: {} (temp={})", ip, temp);
+        validate_ip_or_cidr(ip)?;
+        self.init_chains()?;
 
         let mut args = vec!["-A", NKOSI_BLACKLIST_CHAIN, "-s", ip, "-j", "DROP"];
         if let Some(c) = comment {
@@ -150,8 +160,12 @@ impl FirewallManager {
     /// Unblock an IP address
     pub fn unblock_ip(&self, ip: &str) -> Result<()> {
         info!("Unblocking IP: {}", ip);
+        validate_ip_or_cidr(ip)?;
 
-        let _ = self.run_iptables(&["-D", NKOSI_BLACKLIST_CHAIN, "-s", ip, "-j", "DROP"], false);
+        let _ = self.run_iptables(
+            &["-D", NKOSI_BLACKLIST_CHAIN, "-s", ip, "-j", "DROP"],
+            false,
+        );
         let _ = self.run_iptables(&["-D", "OUTPUT", "-d", ip, "-j", "DROP"], false);
 
         Ok(())
@@ -175,7 +189,10 @@ impl FirewallManager {
 
     /// Remove IP from whitelist
     pub fn remove_whitelist(&self, ip: &str) -> Result<()> {
-        self.run_iptables(&["-D", NKOSI_WHITELIST_CHAIN, "-s", ip, "-j", "ACCEPT"], false)?;
+        self.run_iptables(
+            &["-D", NKOSI_WHITELIST_CHAIN, "-s", ip, "-j", "ACCEPT"],
+            false,
+        )?;
         Ok(())
     }
 
@@ -185,22 +202,46 @@ impl FirewallManager {
 
         self.run_iptables(
             &[
-                "-A", NKOSI_CHAIN,
-                "-s", ip,
-                "-m", "conntrack", "--ctstate", "NEW",
-                "-m", "recent", "--set", "--name", "NKOSI_RATE",
-                "-j", "ACCEPT",
+                "-A",
+                NKOSI_CHAIN,
+                "-s",
+                ip,
+                "-m",
+                "conntrack",
+                "--ctstate",
+                "NEW",
+                "-m",
+                "recent",
+                "--set",
+                "--name",
+                "NKOSI_RATE",
+                "-j",
+                "ACCEPT",
             ],
             false,
         )?;
 
         self.run_iptables(
             &[
-                "-A", NKOSI_CHAIN,
-                "-s", ip,
-                "-m", "conntrack", "--ctstate", "NEW",
-                "-m", "recent", "--update", "--seconds", period, "--hitcount", &max_conn.to_string(), "--name", "NKOSI_RATE",
-                "-j", "DROP",
+                "-A",
+                NKOSI_CHAIN,
+                "-s",
+                ip,
+                "-m",
+                "conntrack",
+                "--ctstate",
+                "NEW",
+                "-m",
+                "recent",
+                "--update",
+                "--seconds",
+                period,
+                "--hitcount",
+                &max_conn.to_string(),
+                "--name",
+                "NKOSI_RATE",
+                "-j",
+                "DROP",
             ],
             false,
         )?;
@@ -310,6 +351,14 @@ impl FirewallManager {
         Ok(output.status.success())
     }
 
+    fn rule_exists(&self, args: &[&str]) -> bool {
+        std::process::Command::new("iptables")
+            .args(args)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
     fn count_rules(&self, chain: &str) -> Result<u32> {
         let output = std::process::Command::new("iptables")
             .args(["-L", chain, "-n", "--line-numbers"])
@@ -348,6 +397,22 @@ impl FirewallManager {
 
         Ok(entries)
     }
+}
+
+fn validate_ip_or_cidr(value: &str) -> Result<()> {
+    let (ip, prefix) = match value.split_once('/') {
+        Some((ip, prefix)) => (ip, Some(prefix)),
+        None => (value, None),
+    };
+    let parsed: IpAddr = ip.parse().context("Invalid IP address")?;
+    if let Some(prefix) = prefix {
+        let prefix: u8 = prefix.parse().context("Invalid CIDR prefix")?;
+        let max = if parsed.is_ipv4() { 32 } else { 128 };
+        if prefix > max {
+            anyhow::bail!("CIDR prefix exceeds address family limit");
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

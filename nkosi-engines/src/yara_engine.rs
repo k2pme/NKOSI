@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn test_default_rules_loaded() {
-        let engine = YaraEngine::new();
+        let _engine = YaraEngine::new();
         assert!(engine.get_rules().len() >= 4);
     }
 

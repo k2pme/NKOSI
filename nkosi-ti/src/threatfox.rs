@@ -5,8 +5,9 @@ use tracing::{info, warn};
 
 use crate::integrity_check;
 
+#[derive(Clone)]
 pub struct ThreatFoxClient {
-    base_url: String,
+    url: String,
 }
 
 impl Default for ThreatFoxClient {
@@ -18,18 +19,20 @@ impl Default for ThreatFoxClient {
 impl ThreatFoxClient {
     pub fn new() -> Self {
         Self {
-            base_url: "https://threatfox.abuse.ch".to_string(),
+            url: "https://threatfox.abuse.ch/api/v1/".to_string(),
         }
+    }
+
+    pub fn with_url(url: String) -> Self {
+        Self { url }
     }
 
     pub async fn fetch_recent_iocs(&self) -> Result<Vec<ThreatIndicator>> {
         info!("Fetching recent IOCs from ThreatFox");
 
-        let url = format!("{}/api/v1/", self.base_url);
-
         let client = reqwest::Client::new();
         let response = client
-            .post(&url)
+            .post(&self.url)
             .json(&serde_json::json!({
                 "query": "get_iocs",
                 "days": 1
@@ -43,7 +46,11 @@ impl ThreatFoxClient {
                     let text = resp.text().await?;
 
                     // RG-008: minimum size check
-                    if !integrity_check::validate_min_size(&text, integrity_check::DEFAULT_MIN_FEED_BYTES, "ThreatFox") {
+                    if !integrity_check::validate_min_size(
+                        &text,
+                        integrity_check::DEFAULT_MIN_FEED_BYTES,
+                        "ThreatFox",
+                    ) {
                         return Ok(Vec::new());
                     }
 
@@ -52,7 +59,11 @@ impl ThreatFoxClient {
                     info!("ThreatFox response audit hash: {}", audit_hash);
 
                     let indicators = self.parse_json_response(&text);
-                    info!("Fetched {} IOCs from ThreatFox (content hash: {})", indicators.len(), audit_hash);
+                    info!(
+                        "Fetched {} IOCs from ThreatFox (content hash: {})",
+                        indicators.len(),
+                        audit_hash
+                    );
                     Ok(indicators)
                 } else {
                     warn!("ThreatFox returned status: {}", resp.status());

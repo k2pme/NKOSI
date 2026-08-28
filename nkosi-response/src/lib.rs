@@ -2,7 +2,7 @@ use nkosi_common::types::*;
 use nkosi_db::Database;
 use nkosi_scanner::FirewallManager;
 use std::path::{Path, PathBuf};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 pub struct ResponseEngine {
     quarantine_path: PathBuf,
@@ -11,7 +11,10 @@ pub struct ResponseEngine {
 
 impl ResponseEngine {
     pub fn new(quarantine_path: PathBuf, db: Option<Database>) -> Self {
-        Self { quarantine_path, db }
+        Self {
+            quarantine_path,
+            db,
+        }
     }
 
     pub async fn execute_action(
@@ -81,7 +84,7 @@ impl ResponseEngine {
 
     async fn kill_process(&self, pid: u32) -> anyhow::Result<()> {
         info!("Killing process PID: {}", pid);
-        
+
         #[cfg(unix)]
         {
             unsafe {
@@ -91,16 +94,22 @@ impl ResponseEngine {
                 } else {
                     let err = std::io::Error::last_os_error();
                     warn!("Failed to kill process {}: {}", pid, err);
+                    return Err(err.into());
                 }
             }
         }
-        
+
         Ok(())
     }
 
-    async fn quarantine_file(&self, file_path: &str, score: u32, reason: &str) -> anyhow::Result<()> {
+    async fn quarantine_file(
+        &self,
+        file_path: &str,
+        score: u32,
+        reason: &str,
+    ) -> anyhow::Result<()> {
         let source = Path::new(file_path);
-        
+
         if !source.exists() {
             warn!("File not found for quarantine: {}", file_path);
             return Ok(());
@@ -111,15 +120,28 @@ impl ResponseEngine {
 
         // Generate quarantine filename
         let id = uuid::Uuid::new_v4();
-        let filename = format!("{}_{}", id, source.file_name().unwrap_or_default().to_string_lossy());
+        let filename = format!(
+            "{}_{}",
+            id,
+            source.file_name().unwrap_or_default().to_string_lossy()
+        );
         let dest = self.quarantine_path.join(&filename);
 
         // Compute hash before moving
         let hash = self.compute_hash(source).unwrap_or_default();
 
-        // Move file to quarantine
-        std::fs::copy(source, &dest)?;
-        
+        // Rename is atomic when both paths are on the same filesystem. Fall back
+        // to copy+remove only after the destination has been fully written.
+        if let Err(rename_error) = std::fs::rename(source, &dest) {
+            warn!(
+                "Atomic quarantine move unavailable: {}; falling back to copy",
+                rename_error
+            );
+            std::fs::copy(source, &dest)?;
+            std::fs::File::open(&dest)?.sync_all()?;
+            std::fs::remove_file(source)?;
+        }
+
         // Remove permissions
         #[cfg(unix)]
         {
@@ -128,12 +150,12 @@ impl ResponseEngine {
             std::fs::set_permissions(&dest, perms)?;
         }
 
-        // Remove original
-        std::fs::remove_file(source)?;
-
         info!(
             "Quarantined: {} -> {} (score: {}, reason: {})",
-            file_path, dest.display(), score, reason
+            file_path,
+            dest.display(),
+            score,
+            reason
         );
 
         // Save to database if available
@@ -150,7 +172,7 @@ impl ResponseEngine {
                 deleted_at: None,
                 status: QuarantineStatus::Quarantined,
             };
-            
+
             let repo = nkosi_db::QuarantineRepository::new(db);
             if let Err(e) = repo.insert(&item) {
                 error!("Failed to save quarantine item to database: {}", e);
@@ -162,29 +184,36 @@ impl ResponseEngine {
 
     async fn restore_file(&self, quarantine_path: &str) -> anyhow::Result<()> {
         let source = Path::new(quarantine_path);
-        
+
         if !source.exists() {
             warn!("Quarantine file not found: {}", quarantine_path);
             return Ok(());
         }
 
-        // Extract original path from filename
-        let filename = source.file_name().unwrap_or_default().to_string_lossy();
-        let original_path = if let Some(pos) = filename.find('_') {
-            &filename[pos + 1..]
-        } else {
-            filename.as_ref()
-        };
-
-        let dest = Path::new("/").join(original_path);
+        let item = self
+            .db
+            .as_ref()
+            .and_then(|db| nkosi_db::QuarantineRepository::new(db).get_active().ok())
+            .and_then(|items| {
+                items
+                    .into_iter()
+                    .find(|item| item.quarantine_path == quarantine_path)
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!("Quarantine metadata not found; refusing unsafe restore")
+            })?;
+        let dest = PathBuf::from(&item.original_path);
 
         // Warn about restoring potentially dangerous file
         warn!(
             "WARNING: Restoring potentially dangerous file {} to {}",
-            quarantine_path, dest.display()
+            quarantine_path,
+            dest.display()
         );
 
-        // Copy file back
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         std::fs::copy(source, &dest)?;
 
         // Restore permissions
@@ -197,6 +226,10 @@ impl ResponseEngine {
 
         // Remove from quarantine
         std::fs::remove_file(source)?;
+        if let Some(ref db) = self.db {
+            nkosi_db::QuarantineRepository::new(db)
+                .update_status(&item.id, QuarantineStatus::Restored)?;
+        }
 
         info!("Restored: {} -> {}", quarantine_path, dest.display());
 
@@ -205,7 +238,7 @@ impl ResponseEngine {
 
     async fn delete_from_quarantine(&self, quarantine_path: &str) -> anyhow::Result<()> {
         let source = Path::new(quarantine_path);
-        
+
         if !source.exists() {
             warn!("Quarantine file not found: {}", quarantine_path);
             return Ok(());
@@ -213,6 +246,15 @@ impl ResponseEngine {
 
         // Permanently delete
         std::fs::remove_file(source)?;
+        if let Some(ref db) = self.db
+            && let Some(item) = nkosi_db::QuarantineRepository::new(db)
+                .get_active()?
+                .into_iter()
+                .find(|item| item.quarantine_path == quarantine_path)
+        {
+            nkosi_db::QuarantineRepository::new(db)
+                .update_status(&item.id, QuarantineStatus::Deleted)?;
+        }
 
         info!("Permanently deleted from quarantine: {}", quarantine_path);
 
@@ -220,7 +262,7 @@ impl ResponseEngine {
     }
 
     fn compute_hash(&self, path: &Path) -> Option<String> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         use std::io::Read;
 
         let mut file = std::fs::File::open(path).ok()?;

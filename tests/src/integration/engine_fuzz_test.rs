@@ -52,7 +52,7 @@ pub fn test_hash_fuzz_analyze_nonexistent() {
 
 #[test]
 pub fn test_hash_fuzz_analyze_with_threat_db() {
-    let mut engine = HashEngine::new();
+    let engine = HashEngine::new();
     engine.load_threat_hashes(vec!["deadbeef".to_string()]);
     let tmp = tempfile::tempdir().unwrap();
 

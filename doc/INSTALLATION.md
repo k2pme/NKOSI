@@ -101,3 +101,23 @@ Consultez les logs :
 ```bash
 journalctl -u nkosi-agent -f
 ```
+
+## 7. Déploiement serveur recommandé
+
+Pour protéger l'hôte, préférez le service systemd : le conteneur est adapté à
+la démonstration et aux composants centralisés, mais ne monte pas les systèmes
+de fichiers de l'hôte à surveiller. Exposez l'API et la console uniquement via
+un reverse proxy HTTPS, avec pare-feu réseau et une clé `NKOSI_API_KEYS` forte.
+Le central doit rester sur un réseau privé ou derrière un proxy qui authentifie
+les agents. Définissez `NKOSI_TRUST_PROXY=1` uniquement si l'accès direct à
+l'API est bloqué par le pare-feu ; cela autorise alors les en-têtes
+`X-Forwarded-For` du reverse proxy pour le rate limiting.
+
+Pour protéger le canal agent-central au niveau applicatif, définissez la même
+valeur secrète de `NKOSI_CENTRAL_TOKEN` sur le central, chaque agent et la
+console. Si elle est absente, le comportement reste compatible avec les
+installations locales existantes ; ne laissez donc pas le central exposé.
+
+L'agent Docker Compose est une démonstration de l'écosystème centralisé : il
+ne protège pas les fichiers de l'hôte. Pour une protection endpoint, installez
+`nkosi-agent` comme service systemd sur chaque serveur.

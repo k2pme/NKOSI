@@ -1,11 +1,13 @@
-use actix_web::{web, HttpRequest, HttpResponse};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::warn;
 
-use crate::state::{AppState, ErrorResponse, get_client_ip, extract_api_key};
-use crate::{SCANS_TOTAL};
-use nkosi_scanner::{RootkitScanner, IntegrityScanner, KernelScanner, SshBruteforceScanner, SshBruteforceConfig};
+use crate::SCANS_TOTAL;
+use crate::state::{AppState, ErrorResponse, extract_api_key, get_client_ip};
+use nkosi_scanner::{
+    IntegrityScanner, KernelScanner, RootkitScanner, SshBruteforceConfig, SshBruteforceScanner,
+};
 
 #[derive(Serialize)]
 struct ScanResponse {
@@ -31,7 +33,10 @@ impl ScanRequest {
     pub fn validate(&self) -> Result<(), String> {
         let valid_types = ["quick", "full", "rootkit", "integrity", "kernel", "ssh"];
         if !valid_types.contains(&self.scan_type.as_str()) {
-            return Err(format!("Invalid scan_type: {}. Use: {:?}", self.scan_type, valid_types));
+            return Err(format!(
+                "Invalid scan_type: {}. Use: {:?}",
+                self.scan_type, valid_types
+            ));
         }
         if let Some(ref path) = self.path {
             if path.contains("..") || path.contains('~') {
@@ -55,19 +60,35 @@ pub async fn trigger_scan(
 ) -> HttpResponse {
     let client_ip = get_client_ip(&req);
     if !data.rate_limiter.check(&client_ip).await {
-        return HttpResponse::TooManyRequests().json(ErrorResponse { error: "Rate limit exceeded".to_string(), code: 429 });
+        return HttpResponse::TooManyRequests().json(ErrorResponse {
+            error: "Rate limit exceeded".to_string(),
+            code: 429,
+        });
     }
     let key = extract_api_key(&req);
     if !data.api_key_auth.validate(&key) {
         warn!("Unauthorized scan attempt from {}", client_ip);
-        return HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid or missing X-API-Key header".to_string(), code: 401 });
+        return HttpResponse::Unauthorized().json(ErrorResponse {
+            error: "Invalid or missing X-API-Key header".to_string(),
+            code: 401,
+        });
     }
 
     if let Err(e) = body.validate() {
-        return HttpResponse::BadRequest().json(ErrorResponse { error: e, code: 400 });
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            error: e,
+            code: 400,
+        });
     }
 
     let result = match body.scan_type.as_str() {
+        "quick" => run_scanners(&[ScanKind::Rootkit, ScanKind::Kernel, ScanKind::Ssh]),
+        "full" => run_scanners(&[
+            ScanKind::Rootkit,
+            ScanKind::Integrity,
+            ScanKind::Kernel,
+            ScanKind::Ssh,
+        ]),
         "rootkit" => {
             let scanner = RootkitScanner::new();
             scanner.scan().map(|r| (r.score, r.findings.len()))
@@ -87,7 +108,8 @@ pub async fn trigger_scan(
         }
         _ => {
             return HttpResponse::BadRequest().json(ErrorResponse {
-                error: "Invalid scan type".to_string(), code: 400,
+                error: "Invalid scan type".to_string(),
+                code: 400,
             });
         }
     };
@@ -102,6 +124,40 @@ pub async fn trigger_scan(
                 findings_count,
             })
         }
-        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse { error: e.to_string(), code: 500 }),
+        Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
+            error: e.to_string(),
+            code: 500,
+        }),
     }
+}
+
+enum ScanKind {
+    Rootkit,
+    Integrity,
+    Kernel,
+    Ssh,
+}
+
+fn run_scanners(scans: &[ScanKind]) -> anyhow::Result<(u32, usize)> {
+    let mut score = 0;
+    let mut findings = 0;
+    for scan in scans {
+        let (scan_score, scan_findings) = match scan {
+            ScanKind::Rootkit => RootkitScanner::new()
+                .scan()
+                .map(|result| (result.score, result.findings.len()))?,
+            ScanKind::Integrity => IntegrityScanner::new()
+                .scan()
+                .map(|result| (result.score, result.findings.len()))?,
+            ScanKind::Kernel => KernelScanner::new()
+                .scan()
+                .map(|result| (result.score, result.findings.len()))?,
+            ScanKind::Ssh => SshBruteforceScanner::new(SshBruteforceConfig::default())
+                .scan()
+                .map(|result| (result.score, result.attackers.len()))?,
+        };
+        score = score.max(scan_score);
+        findings += scan_findings;
+    }
+    Ok((score, findings))
 }

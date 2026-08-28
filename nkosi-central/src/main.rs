@@ -231,15 +231,16 @@ impl NkosiCentral for CentralService {
         let mut persisted = 0usize;
         let mut events = self.events.write().await;
         for mut event in batch.events {
-            event.id = uuid::Uuid::new_v4().to_string();
             // Tag the event with its originating agent for multi-server
             // host attribution in the console.
             event.agent_id = batch.agent_id.clone();
             match event_repo.insert(&proto_event_to_event(&event, &batch.agent_id)) {
-                Ok(()) => persisted += 1,
+                Ok(()) => {
+                    persisted += 1;
+                    events.push(event);
+                }
                 Err(e) => warn!("Failed to persist event {}: {}", event.id, e),
             }
-            events.push(event);
         }
 
         // Keep only last MAX_IN_MEMORY_EVENTS events
@@ -254,8 +255,12 @@ impl NkosiCentral for CentralService {
 
         Ok(Response::new(EventAck {
             success: true,
-            received_count: count as u32,
-            message: format!("{} events received", count),
+            received_count: persisted as u32,
+            message: format!(
+                "{} new events received ({} duplicates or failures)",
+                persisted,
+                count - persisted
+            ),
         }))
     }
 
@@ -456,6 +461,9 @@ impl NkosiCentral for CentralService {
     }
 }
 
+// tonic interceptors must return `tonic::Status`; boxing that framework error
+// is not possible without changing the generated service signature.
+#[allow(clippy::result_large_err)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -490,8 +498,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let required_token = std::env::var("NKOSI_CENTRAL_TOKEN")
+        .ok()
+        .filter(|value| !value.is_empty());
+    let guarded_service =
+        NkosiCentralServer::with_interceptor(service, move |request: Request<()>| {
+            if let Some(expected) = &required_token {
+                let provided = request
+                    .metadata()
+                    .get("x-nkosi-token")
+                    .and_then(|value| value.to_str().ok());
+                if provided != Some(expected.as_str()) {
+                    return Err(Status::unauthenticated("missing or invalid central token"));
+                }
+            }
+            Ok(request)
+        });
+
     tonic::transport::Server::builder()
-        .add_service(NkosiCentralServer::new(service))
+        .add_service(guarded_service)
         .serve(addr)
         .await?;
 

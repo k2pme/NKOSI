@@ -79,7 +79,11 @@ impl ApiKeyAuth {
             if valid.len() != key.len() {
                 return false;
             }
-            valid.bytes().zip(key.bytes()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
+            valid
+                .bytes()
+                .zip(key.bytes())
+                .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+                == 0
         })
     }
 }
@@ -106,26 +110,30 @@ pub struct ScanQuery {
 
 impl ScanQuery {
     pub fn validate(&self) -> Result<(), String> {
-    if let Some(limit) = self.limit
-        && (limit == 0 || limit > 10000)
-    {
-        return Err("Limit must be 1-10000".to_string());
-    }
+        if let Some(limit) = self.limit
+            && (limit == 0 || limit > 10000)
+        {
+            return Err("Limit must be 1-10000".to_string());
+        }
         Ok(())
     }
 }
 
 pub fn get_client_ip(req: &HttpRequest) -> String {
-    if let Some(forwarded) = req.headers().get("X-Forwarded-For")
-        && let Ok(val) = forwarded.to_str()
-        && let Some(ip) = val.split(',').next()
-    {
-        return ip.trim().to_string();
-    }
-    if let Some(real_ip) = req.headers().get("X-Real-IP")
-        && let Ok(val) = real_ip.to_str()
-    {
-        return val.trim().to_string();
+    // Forwarded headers are attacker-controlled unless this process is only
+    // reachable through a trusted reverse proxy.
+    if std::env::var("NKOSI_TRUST_PROXY").as_deref() == Ok("1") {
+        if let Some(forwarded) = req.headers().get("X-Forwarded-For")
+            && let Ok(val) = forwarded.to_str()
+            && let Some(ip) = val.split(',').next()
+        {
+            return ip.trim().to_string();
+        }
+        if let Some(real_ip) = req.headers().get("X-Real-IP")
+            && let Ok(val) = real_ip.to_str()
+        {
+            return val.trim().to_string();
+        }
     }
     req.peer_addr()
         .map(|addr| addr.ip().to_string())

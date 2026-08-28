@@ -26,7 +26,7 @@ network_monitor_enabled = true
 
 [risk]
 low_threshold = 30
-suspicious_threshold = 70
+suspicious_threshold = 50
 malicious_threshold = 70
 
 [risk.weights]
@@ -50,7 +50,12 @@ enabled = true
 
 [[threat_intel.sources]]
 name = "ThreatFox"
-url = "https://threatfox.abuse.ch/export/csv/recent/"
+url = "https://threatfox.abuse.ch/api/v1/"
+enabled = true
+
+[[threat_intel.sources]]
+name = "URLhaus"
+url = "https://urlhaus.abuse.ch/csv/recent/"
 enabled = true
 
 [logging]

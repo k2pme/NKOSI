@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     pkg-config \
     libssl-dev \
+    libyara-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
@@ -30,6 +31,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     iptables \
+    libyara9 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create nkosi user

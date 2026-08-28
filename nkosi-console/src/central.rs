@@ -8,8 +8,19 @@ pub mod central {
     tonic::include_proto!("nkosi.central");
 }
 
-pub use central::*;
 use central::nkosi_central_client::NkosiCentralClient;
+pub use central::*;
+
+fn central_request<T>(message: T) -> Request<T> {
+    let mut request = Request::new(message);
+    if let Ok(token) = std::env::var("NKOSI_CENTRAL_TOKEN")
+        && !token.is_empty()
+        && let Ok(value) = token.parse()
+    {
+        request.metadata_mut().insert("x-nkosi-token", value);
+    }
+    request
+}
 
 /// A queryable snapshot of the aggregated remote agents/events, held in memory
 /// and refreshed periodically by the console's background poller. Keeping a
@@ -64,7 +75,7 @@ impl CentralClient {
             return snapshot;
         };
 
-        let agents = match client.get_agents(Request::new(Empty {})).await {
+        let agents = match client.get_agents(central_request(Empty {})).await {
             Ok(resp) => resp.into_inner().agents,
             Err(e) => {
                 warn!("get_agents failed: {}", e);
@@ -78,7 +89,7 @@ impl CentralClient {
         // the central server tags on each event). Also fetch the aggregated
         // stats for totals/online counts.
         if let Ok(resp) = client
-            .get_events(Request::new(EventQuery {
+            .get_events(central_request(EventQuery {
                 limit: 2000,
                 ..Default::default()
             }))

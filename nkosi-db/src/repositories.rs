@@ -72,11 +72,13 @@ impl<'a> EventRepository<'a> {
                 remote_ip: row.get(9)?,
                 remote_port: row.get(10)?,
                 domain: row.get(11)?,
-                incident_id: row.get::<_, Option<String>>(12)?
+                incident_id: row
+                    .get::<_, Option<String>>(12)?
                     .and_then(|s| Uuid::parse_str(&s).ok()),
                 severity: serde_json::from_str(&row.get::<_, String>(13)?).unwrap(),
                 score: row.get(14)?,
-                action: row.get::<_, Option<String>>(15)?
+                action: row
+                    .get::<_, Option<String>>(15)?
                     .map(|a| serde_json::from_str(&a).unwrap()),
                 result: row.get(16)?,
                 agent_id: row.get(17)?,
@@ -116,11 +118,13 @@ impl<'a> EventRepository<'a> {
                 remote_ip: row.get(9)?,
                 remote_port: row.get(10)?,
                 domain: row.get(11)?,
-                incident_id: row.get::<_, Option<String>>(12)?
+                incident_id: row
+                    .get::<_, Option<String>>(12)?
                     .and_then(|s| Uuid::parse_str(&s).ok()),
                 severity: serde_json::from_str(&row.get::<_, String>(13)?).unwrap(),
                 score: row.get(14)?,
-                action: row.get::<_, Option<String>>(15)?
+                action: row
+                    .get::<_, Option<String>>(15)?
                     .map(|a| serde_json::from_str(&a).unwrap()),
                 result: row.get(16)?,
                 agent_id: row.get(17)?,
@@ -161,11 +165,13 @@ impl<'a> EventRepository<'a> {
                 remote_ip: row.get(9)?,
                 remote_port: row.get(10)?,
                 domain: row.get(11)?,
-                incident_id: row.get::<_, Option<String>>(12)?
+                incident_id: row
+                    .get::<_, Option<String>>(12)?
                     .and_then(|s| Uuid::parse_str(&s).ok()),
                 severity: serde_json::from_str(&row.get::<_, String>(13)?).unwrap(),
                 score: row.get(14)?,
-                action: row.get::<_, Option<String>>(15)?
+                action: row
+                    .get::<_, Option<String>>(15)?
                     .map(|a| serde_json::from_str(&a).unwrap()),
                 result: row.get(16)?,
                 agent_id: row.get(17)?,
@@ -180,7 +186,11 @@ impl<'a> EventRepository<'a> {
         Ok(events)
     }
 
-    pub fn link_to_incident(&self, event_id: &Uuid, incident_id: &Uuid) -> Result<(), rusqlite::Error> {
+    pub fn link_to_incident(
+        &self,
+        event_id: &Uuid,
+        incident_id: &Uuid,
+    ) -> Result<(), rusqlite::Error> {
         let conn = self.db.connection();
         conn.execute(
             "UPDATE events SET incident_id = ?1 WHERE id = ?2",
@@ -235,7 +245,8 @@ impl<'a> DetectionRepository<'a> {
                     .unwrap_or_else(|_| uuid::Uuid::new_v4()),
                 event_id: Uuid::parse_str(&row.get::<_, String>(1)?)
                     .unwrap_or_else(|_| uuid::Uuid::new_v4()),
-                incident_id: row.get::<_, Option<String>>(2)?
+                incident_id: row
+                    .get::<_, Option<String>>(2)?
                     .and_then(|s| Uuid::parse_str(&s).ok()),
                 detection_engine: serde_json::from_str(&row.get::<_, String>(3)?).unwrap(),
                 rule_id: row.get(4)?,
@@ -253,7 +264,11 @@ impl<'a> DetectionRepository<'a> {
         Ok(detections)
     }
 
-    pub fn link_to_incident(&self, detection_id: &Uuid, incident_id: &Uuid) -> Result<(), rusqlite::Error> {
+    pub fn link_to_incident(
+        &self,
+        detection_id: &Uuid,
+        incident_id: &Uuid,
+    ) -> Result<(), rusqlite::Error> {
         let conn = self.db.connection();
         conn.execute(
             "UPDATE detections SET incident_id = ?1 WHERE id = ?2",
@@ -439,11 +454,22 @@ impl<'a> ThreatIndicatorRepository<'a> {
 
     pub fn count(&self) -> Result<i64, rusqlite::Error> {
         let conn = self.db.connection();
-        let mut stmt = conn.prepare(
-            "SELECT COUNT(*) FROM threat_indicators WHERE enabled = 1",
-        )?;
+        let mut stmt = conn.prepare("SELECT COUNT(*) FROM threat_indicators WHERE enabled = 1")?;
         let count: i64 = stmt.query_row([], |row| row.get(0))?;
         Ok(count)
+    }
+
+    /// Returns enabled SHA-256 indicators for the in-memory file hash engine.
+    pub fn get_enabled_sha256_values(&self) -> Result<Vec<String>, rusqlite::Error> {
+        let conn = self.db.connection();
+        let mut stmt = conn.prepare(
+            "SELECT value FROM threat_indicators WHERE indicator_type = ?1 AND enabled = 1",
+        )?;
+        stmt.query_map(
+            params![serde_json::to_string(&IndicatorType::Sha256).unwrap()],
+            |row| row.get(0),
+        )?
+        .collect()
     }
 }
 
@@ -500,10 +526,16 @@ impl<'a> QuarantineRepository<'a> {
                 quarantined_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(6)?)
                     .map(|dt| dt.with_timezone(&Utc))
                     .unwrap_or_else(|_| Utc::now()),
-                restored_at: row.get::<_, Option<String>>(7)?
-                    .map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc)),
-                deleted_at: row.get::<_, Option<String>>(8)?
-                    .map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc)),
+                restored_at: row.get::<_, Option<String>>(7)?.map(|t| {
+                    DateTime::parse_from_rfc3339(&t)
+                        .unwrap()
+                        .with_timezone(&Utc)
+                }),
+                deleted_at: row.get::<_, Option<String>>(8)?.map(|t| {
+                    DateTime::parse_from_rfc3339(&t)
+                        .unwrap()
+                        .with_timezone(&Utc)
+                }),
                 status: serde_json::from_str(&row.get::<_, String>(9)?).unwrap(),
             })
         })?;
@@ -535,10 +567,16 @@ impl<'a> QuarantineRepository<'a> {
                 quarantined_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(6)?)
                     .map(|dt| dt.with_timezone(&Utc))
                     .unwrap_or_else(|_| Utc::now()),
-                restored_at: row.get::<_, Option<String>>(7)?
-                    .map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc)),
-                deleted_at: row.get::<_, Option<String>>(8)?
-                    .map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc)),
+                restored_at: row.get::<_, Option<String>>(7)?.map(|t| {
+                    DateTime::parse_from_rfc3339(&t)
+                        .unwrap()
+                        .with_timezone(&Utc)
+                }),
+                deleted_at: row.get::<_, Option<String>>(8)?.map(|t| {
+                    DateTime::parse_from_rfc3339(&t)
+                        .unwrap()
+                        .with_timezone(&Utc)
+                }),
                 status: serde_json::from_str(&row.get::<_, String>(9)?).unwrap(),
             })
         })?;
@@ -747,7 +785,13 @@ impl<'a> AgentRepository<'a> {
         }
     }
 
-    pub fn update_heartbeat(&self, id: &str, score: u32, events: u32, threats: u32) -> Result<(), rusqlite::Error> {
+    pub fn update_heartbeat(
+        &self,
+        id: &str,
+        score: u32,
+        events: u32,
+        threats: u32,
+    ) -> Result<(), rusqlite::Error> {
         let conn = self.db.connection();
         conn.execute(
             "UPDATE agents SET last_seen = ?1, score = ?2, events_count = ?3, threats_count = ?4, status = 'Online' WHERE id = ?5",
@@ -829,11 +873,13 @@ impl<'a> AgentRepository<'a> {
                 remote_ip: row.get(9)?,
                 remote_port: row.get(10)?,
                 domain: row.get(11)?,
-                incident_id: row.get::<_, Option<String>>(12)?
+                incident_id: row
+                    .get::<_, Option<String>>(12)?
                     .and_then(|s| Uuid::parse_str(&s).ok()),
                 severity: serde_json::from_str(&row.get::<_, String>(13)?).unwrap(),
                 score: row.get(14)?,
-                action: row.get::<_, Option<String>>(15)?
+                action: row
+                    .get::<_, Option<String>>(15)?
                     .map(|a| serde_json::from_str(&a).unwrap()),
                 result: row.get(16)?,
                 agent_id: row.get(17)?,
@@ -851,11 +897,25 @@ impl<'a> AgentRepository<'a> {
     pub fn get_consolidated_stats(&self) -> Result<ConsolidatedStats, rusqlite::Error> {
         let conn = self.db.connection();
 
-        let total_agents: u32 = conn.query_row("SELECT COUNT(*) FROM agents", [], |row| row.get(0))?;
-        let online_agents: u32 = conn.query_row("SELECT COUNT(*) FROM agents WHERE status = 'Online'", [], |row| row.get(0))?;
-        let total_events: u64 = conn.query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))?;
-        let total_threats: u64 = conn.query_row("SELECT COUNT(*) FROM events WHERE event_type LIKE '%Detection%'", [], |row| row.get(0))?;
-        let total_quarantine: u64 = conn.query_row("SELECT COUNT(*) FROM quarantine_items WHERE status = '\"Quarantined\"'", [], |row| row.get(0))?;
+        let total_agents: u32 =
+            conn.query_row("SELECT COUNT(*) FROM agents", [], |row| row.get(0))?;
+        let online_agents: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM agents WHERE status = 'Online'",
+            [],
+            |row| row.get(0),
+        )?;
+        let total_events: u64 =
+            conn.query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))?;
+        let total_threats: u64 = conn.query_row(
+            "SELECT COUNT(*) FROM events WHERE event_type LIKE '%Detection%'",
+            [],
+            |row| row.get(0),
+        )?;
+        let total_quarantine: u64 = conn.query_row(
+            "SELECT COUNT(*) FROM quarantine_items WHERE status = '\"Quarantined\"'",
+            [],
+            |row| row.get(0),
+        )?;
 
         Ok(ConsolidatedStats {
             total_agents,
