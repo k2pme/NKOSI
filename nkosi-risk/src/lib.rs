@@ -70,7 +70,7 @@ impl RiskEngine {
             let weight = self.get_weight(&detection.detection_engine);
             let contribution = (detection.score_contribution as f32 * detection.confidence) as u32;
             let weighted_contribution = (contribution as f32 * weight as f32 / 100.0) as u32;
-            
+
             weighted_score += weighted_contribution;
             total_weight += weight;
 
@@ -102,7 +102,9 @@ impl RiskEngine {
 
         info!(
             "Risk assessment: score={}, level={:?}, detections={}",
-            normalized_score, level, detections.len()
+            normalized_score,
+            level,
+            detections.len()
         );
 
         RiskAssessment {
@@ -175,9 +177,7 @@ mod tests {
     #[test]
     fn test_clean_file() {
         let engine = RiskEngine::new(RiskConfig::default());
-        let detections = vec![
-            make_detection(DetectionEngine::StaticAnalysis, 10, 0.5),
-        ];
+        let detections = vec![make_detection(DetectionEngine::StaticAnalysis, 10, 0.5)];
         let result = engine.evaluate(detections);
         assert!(result.score < 30);
         assert_eq!(result.level, RiskLevel::Clean);
@@ -197,9 +197,7 @@ mod tests {
     #[test]
     fn test_malicious_file() {
         let engine = RiskEngine::new(RiskConfig::default());
-        let detections = vec![
-            make_detection(DetectionEngine::Hash, 100, 1.0),
-        ];
+        let detections = vec![make_detection(DetectionEngine::Hash, 100, 1.0)];
         let result = engine.evaluate(detections);
         assert_eq!(result.level, RiskLevel::Malicious);
         assert!(result.score >= 70);
@@ -221,11 +219,23 @@ mod tests {
     #[test]
     fn test_get_recommended_action() {
         let engine = RiskEngine::new(RiskConfig::default());
-        
-        assert_eq!(engine.get_recommended_action(&RiskLevel::Clean), ResponseAction::Allow);
-        assert_eq!(engine.get_recommended_action(&RiskLevel::Low), ResponseAction::Alert);
-        assert_eq!(engine.get_recommended_action(&RiskLevel::Suspicious), ResponseAction::Alert);
-        assert_eq!(engine.get_recommended_action(&RiskLevel::Malicious), ResponseAction::Quarantine);
+
+        assert_eq!(
+            engine.get_recommended_action(&RiskLevel::Clean),
+            ResponseAction::Allow
+        );
+        assert_eq!(
+            engine.get_recommended_action(&RiskLevel::Low),
+            ResponseAction::Alert
+        );
+        assert_eq!(
+            engine.get_recommended_action(&RiskLevel::Suspicious),
+            ResponseAction::Alert
+        );
+        assert_eq!(
+            engine.get_recommended_action(&RiskLevel::Malicious),
+            ResponseAction::Quarantine
+        );
     }
 
     #[test]
@@ -242,11 +252,9 @@ mod tests {
                 network: 60,
             },
         };
-        
+
         let engine = RiskEngine::new(config);
-        let detections = vec![
-            make_detection(DetectionEngine::Hash, 50, 0.8),
-        ];
+        let detections = vec![make_detection(DetectionEngine::Hash, 50, 0.8)];
         let result = engine.evaluate(detections);
         assert!(result.score > 0);
     }
@@ -254,9 +262,7 @@ mod tests {
     #[test]
     fn test_score_normalization() {
         let engine = RiskEngine::new(RiskConfig::default());
-        let detections = vec![
-            make_detection(DetectionEngine::Hash, 100, 1.0),
-        ];
+        let detections = vec![make_detection(DetectionEngine::Hash, 100, 1.0)];
         let result = engine.evaluate(detections);
         assert!(result.score <= 100);
     }

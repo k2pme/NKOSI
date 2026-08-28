@@ -43,7 +43,10 @@ impl NetworkMonitor {
         if let Ok(mut cache) = inode_cache.try_lock() {
             cache.map = Self::scan_inode_map();
             cache.last_refresh = Some(Instant::now());
-            info!("Network monitor inode cache primed: {} sockets", cache.map.len());
+            info!(
+                "Network monitor inode cache primed: {} sockets",
+                cache.map.len()
+            );
         }
 
         Self {
@@ -79,16 +82,23 @@ impl NetworkMonitor {
             for conn in connections {
                 let key = format!(
                     "{}:{}-{}:{}-{}",
-                    conn.protocol, conn.local_addr, conn.local_port,
-                    conn.remote_addr, conn.remote_port
+                    conn.protocol,
+                    conn.local_addr,
+                    conn.local_port,
+                    conn.remote_addr,
+                    conn.remote_port
                 );
                 current_keys.insert(key.clone());
 
                 if !known_keys.contains(&key) && conn.state != "LISTEN" {
                     debug!(
                         "New connection {} {}:{} -> {}:{} (pid {:?})",
-                        conn.protocol, conn.local_addr, conn.local_port,
-                        conn.remote_addr, conn.remote_port, conn.pid
+                        conn.protocol,
+                        conn.local_addr,
+                        conn.local_port,
+                        conn.remote_addr,
+                        conn.remote_port,
+                        conn.pid
                     );
                     event_bus.send(MonitorEvent::NetworkEvent {
                         pid: conn.pid.unwrap_or(0),

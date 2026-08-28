@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -84,7 +84,11 @@ impl IntegrityScanner {
         let score = self.calculate_score(&findings);
         let summary = self.generate_summary(&findings, score, baseline_exists);
 
-        info!("Integrity scan completed: {} findings, score: {}", findings.len(), score);
+        info!(
+            "Integrity scan completed: {} findings, score: {}",
+            findings.len(),
+            score
+        );
 
         Ok(IntegrityReport {
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -142,7 +146,8 @@ impl IntegrityScanner {
                         path: path.display().to_string(),
                         sha256: hash,
                         size: metadata.len(),
-                        modified: metadata.modified()
+                        modified: metadata
+                            .modified()
                             .map(|t| format!("{:?}", t))
                             .unwrap_or_default(),
                     };
@@ -244,8 +249,14 @@ impl IntegrityScanner {
         } else if findings.is_empty() {
             "System integrity verified. No changes detected since baseline.".to_string()
         } else {
-            let modified = findings.iter().filter(|f| f.finding_type == "Modified").count();
-            let deleted = findings.iter().filter(|f| f.finding_type == "Deleted").count();
+            let modified = findings
+                .iter()
+                .filter(|f| f.finding_type == "Modified")
+                .count();
+            let deleted = findings
+                .iter()
+                .filter(|f| f.finding_type == "Deleted")
+                .count();
             let new = findings.iter().filter(|f| f.finding_type == "New").count();
 
             format!(

@@ -1,7 +1,7 @@
 use nkosi_common::types::*;
+use regex::Regex;
 use std::path::Path;
 use tracing::debug;
-use regex::Regex;
 
 #[derive(Debug, Clone)]
 pub struct StaticAnalysisResult {
@@ -153,7 +153,9 @@ impl StaticAnalyzer {
                 findings.push("ELF stripped (no symbols)".to_string());
             }
             // Check for unusual sections
-            let section_names: Vec<&str> = elf.section_headers.iter()
+            let section_names: Vec<&str> = elf
+                .section_headers
+                .iter()
                 .filter_map(|sh| elf.shdr_strtab.get_at(sh.sh_name))
                 .collect();
             if section_names.iter().any(|s| *s == ".upx0" || *s == ".upx1") {
@@ -190,11 +192,15 @@ impl StaticAnalyzer {
         let mut findings = Vec::new();
         if let Ok(pe) = goblin::pe::PE::parse(content) {
             // Check imports for suspicious APIs
-            let imports: Vec<&str> = pe.imports.iter()
-                .filter_map(|i| Some(i.name))
-                .collect();
-            let suspicious_apis = ["VirtualAllocEx", "WriteProcessMemory", "CreateRemoteThread",
-                "NtUnmapViewOfSection", "IsDebuggerPresent", "GetTickCount"];
+            let imports: Vec<&str> = pe.imports.iter().filter_map(|i| Some(i.name)).collect();
+            let suspicious_apis = [
+                "VirtualAllocEx",
+                "WriteProcessMemory",
+                "CreateRemoteThread",
+                "NtUnmapViewOfSection",
+                "IsDebuggerPresent",
+                "GetTickCount",
+            ];
             for api in &suspicious_apis {
                 if imports.iter().any(|i| i == api) {
                     findings.push(format!("Suspicious PE import: {}", api));
@@ -243,7 +249,7 @@ impl StaticAnalyzer {
 
     fn find_suspicious_strings(&self, content: &str) -> Vec<String> {
         let mut suspicious = Vec::new();
-        
+
         let suspicious_patterns = vec![
             r"(?i)password",
             r"(?i)secret",
@@ -281,7 +287,7 @@ impl StaticAnalyzer {
 
     fn find_shell_commands(&self, content: &str) -> Vec<String> {
         let mut found = Vec::new();
-        
+
         for pattern in &self.shell_patterns {
             if content.contains(pattern) {
                 found.push(pattern.clone());

@@ -133,10 +133,18 @@ pub fn agent_mark_offline_stale() {
     assert_eq!(count, 1, "Should mark 1 stale agent");
 
     let a1 = repo.get_by_id("a1").unwrap().unwrap();
-    assert_eq!(a1.status, AgentStatus::Offline, "Stale agent should be marked Offline");
+    assert_eq!(
+        a1.status,
+        AgentStatus::Offline,
+        "Stale agent should be marked Offline"
+    );
 
     let a2 = repo.get_by_id("a2").unwrap().unwrap();
-    assert_eq!(a2.status, AgentStatus::Online, "Fresh agent should remain Online");
+    assert_eq!(
+        a2.status,
+        AgentStatus::Online,
+        "Fresh agent should remain Online"
+    );
 }
 
 #[test]
@@ -168,15 +176,31 @@ pub fn events_with_agent_filter() {
     }
 
     // Query all events
-    let all = agent_repo.get_events_filtered(None, None, None, 100).unwrap();
+    let all = agent_repo
+        .get_events_filtered(None, None, None, 100)
+        .unwrap();
     assert_eq!(all.len(), 8, "Should have 8 total events");
 
     // Query by severity
-    let critical = agent_repo.get_events_filtered(None, None, Some("Critical"), 100).unwrap();
-    assert_eq!(critical.len(), 3, "Should have 3 critical events, got {}", critical.len());
+    let critical = agent_repo
+        .get_events_filtered(None, None, Some("Critical"), 100)
+        .unwrap();
+    assert_eq!(
+        critical.len(),
+        3,
+        "Should have 3 critical events, got {}",
+        critical.len()
+    );
 
-    let high = agent_repo.get_events_filtered(None, None, Some("High"), 100).unwrap();
-    assert_eq!(high.len(), 2, "Should have 2 high events, got {}", high.len());
+    let high = agent_repo
+        .get_events_filtered(None, None, Some("High"), 100)
+        .unwrap();
+    assert_eq!(
+        high.len(),
+        2,
+        "Should have 2 high events, got {}",
+        high.len()
+    );
 
     // Query with limit
     let limited = agent_repo.get_events_filtered(None, None, None, 3).unwrap();
@@ -215,7 +239,10 @@ pub fn consolidated_stats() {
     assert_eq!(stats.total_agents, 3);
     assert_eq!(stats.online_agents, 2);
     assert_eq!(stats.offline_agents, 1);
-    assert!(stats.total_events >= 13, "Should have at least 13 events (10 + 3 detections)");
+    assert!(
+        stats.total_events >= 13,
+        "Should have at least 13 events (10 + 3 detections)"
+    );
     assert!(stats.total_threats >= 3, "Should have at least 3 threats");
 }
 
@@ -227,20 +254,30 @@ pub fn full_lifecycle() {
 
     // 1. Register 3 agents
     for i in 0..3 {
-        let agent = make_agent(&format!("agent-{}", i), &format!("host-{}", i), AgentStatus::Online);
+        let agent = make_agent(
+            &format!("agent-{}", i),
+            &format!("host-{}", i),
+            AgentStatus::Online,
+        );
         agent_repo.upsert(&agent).unwrap();
     }
 
     // 2. Each agent sends heartbeats
     for i in 0..3 {
-        agent_repo.update_heartbeat(&format!("agent-{}", i), 100 - (i as u32 * 10), i as u32, 0).unwrap();
+        agent_repo
+            .update_heartbeat(&format!("agent-{}", i), 100 - (i as u32 * 10), i as u32, 0)
+            .unwrap();
     }
 
     // 3. Agents report events
     for i in 0..5 {
         let mut event = Event::new(EventType::FileCreated, &format!("monitor-{}", i % 3));
         event.file_path = Some(format!("/opt/app/file_{}.bin", i));
-        event.severity = if i == 4 { Severity::High } else { Severity::Low };
+        event.severity = if i == 4 {
+            Severity::High
+        } else {
+            Severity::Low
+        };
         event_repo.insert(&event).unwrap();
     }
 
@@ -258,8 +295,14 @@ pub fn full_lifecycle() {
 
     // 6. Verify final state
     let all = agent_repo.get_all().unwrap();
-    let online_count = all.iter().filter(|a| a.status == AgentStatus::Online).count();
-    let offline_count = all.iter().filter(|a| a.status == AgentStatus::Offline).count();
+    let online_count = all
+        .iter()
+        .filter(|a| a.status == AgentStatus::Online)
+        .count();
+    let offline_count = all
+        .iter()
+        .filter(|a| a.status == AgentStatus::Offline)
+        .count();
     assert_eq!(online_count, 2);
     assert_eq!(offline_count, 1);
 

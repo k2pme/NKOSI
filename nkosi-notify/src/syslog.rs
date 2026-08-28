@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use crate::trait_notif::Notifier;
 use crate::types::{Alert, AlertLevel, SyslogConfig};
+use async_trait::async_trait;
 
 pub struct SyslogNotifier {
     _config: SyslogConfig,
@@ -9,7 +9,10 @@ pub struct SyslogNotifier {
 
 impl SyslogNotifier {
     pub fn new(config: SyslogConfig, min_level: AlertLevel) -> anyhow::Result<Self> {
-        Ok(Self { _config: config, min_level })
+        Ok(Self {
+            _config: config,
+            min_level,
+        })
     }
 
     fn format_message(&self, alert: &Alert) -> String {
@@ -38,7 +41,7 @@ impl SyslogNotifier {
 impl Notifier for SyslogNotifier {
     async fn send(&self, alert: &Alert) -> anyhow::Result<()> {
         let message = self.format_message(alert);
-        
+
         // Write to syslog using the syslog crate or fallback to logger
         // For now, use tracing which can be configured to write to syslog
         match alert.level {

@@ -32,6 +32,3 @@ uuid = { version = "1", features = ["v4", "serde"] }
 regex = "1"
 tempfile = "3"
 lru = "0.12"
-
-[workspace.dev-dependencies]
-tokio-test = "0.4"

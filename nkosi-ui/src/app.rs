@@ -1,7 +1,7 @@
 use anyhow::Result;
 use nkosi_common::config::NkosiConfig;
 use nkosi_common::types::*;
-use nkosi_core::{load_config, init_database};
+use nkosi_core::{init_database, load_config};
 use nkosi_db::Database;
 use nkosi_engines::{HashEngine, StaticAnalyzer, YaraEngine};
 use nkosi_risk::{RiskConfig, RiskEngine};
@@ -62,7 +62,10 @@ impl App {
             stats: Stats::default(),
             events: Vec::new(),
             scan_results: Vec::new(),
-            scan_path: watched_paths.first().cloned().unwrap_or_else(|| "/tmp".to_string()),
+            scan_path: watched_paths
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "/tmp".to_string()),
             watched_paths,
             scan_running: false,
             scan_rx: None,
@@ -152,7 +155,8 @@ impl App {
         let (tx, rx) = mpsc::channel();
         self.scan_rx = Some(rx);
         self.scan_results.clear();
-        self.scan_results.push(format!("Scan de {} en cours...", path));
+        self.scan_results
+            .push(format!("Scan de {} en cours...", path));
         self.scan_running = true;
 
         std::thread::spawn(move || run_scan(path, tx));
@@ -184,7 +188,8 @@ impl App {
         let quarantine_items = quarantine_repo.get_active()?;
         self.stats.quarantine_items = quarantine_items.len();
 
-        self.stats.total_threats = events.iter()
+        self.stats.total_threats = events
+            .iter()
             .filter(|e| matches!(e.event_type, EventType::Detection))
             .count();
 
@@ -214,8 +219,14 @@ impl App {
         self.agents = agent_repo.get_all()?;
         let event_repo = nkosi_db::EventRepository::new(&self.db);
         let events = event_repo.get_recent(500)?;
-        self.alerts_count = events.iter()
-            .filter(|e| matches!(e.severity, Severity::Critical | Severity::High | Severity::Medium))
+        self.alerts_count = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.severity,
+                    Severity::Critical | Severity::High | Severity::Medium
+                )
+            })
             .count();
         Ok(())
     }
@@ -237,7 +248,9 @@ fn run_scan(path: String, tx: Sender<String>) {
     {
         scanned_files += 1;
 
-        if let Some(detection) = scan_file(entry.path(), &hash_engine, &yara_engine, &static_analyzer) {
+        if let Some(detection) =
+            scan_file(entry.path(), &hash_engine, &yara_engine, &static_analyzer)
+        {
             detected_threats += 1;
             let assessment = risk_engine.evaluate(vec![detection]);
             let _ = tx.send(format!(
@@ -273,5 +286,3 @@ fn scan_file(
 
     static_analyzer.analyze_file(path)
 }
-
-

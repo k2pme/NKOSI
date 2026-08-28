@@ -1,14 +1,14 @@
+use crate::report;
 use anyhow::Result;
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use nkosi_common::config::NkosiConfig;
 use nkosi_common::types::*;
 use nkosi_db::Database;
-use nkosi_engines::{HashEngine, YaraEngine, StaticAnalyzer};
-use nkosi_risk::{RiskEngine, RiskConfig};
+use nkosi_engines::{HashEngine, StaticAnalyzer, YaraEngine};
 use nkosi_response::ResponseEngine;
+use nkosi_risk::{RiskConfig, RiskEngine};
 use std::path::Path;
-use crate::report;
 
 fn scan_file(
     path: &Path,
@@ -19,60 +19,67 @@ fn scan_file(
     if let Some(detection) = hash_engine.analyze_file(path) {
         return Some(detection);
     }
-    
+
     let yara_detections = yara_engine.scan_file(path);
     if !yara_detections.is_empty() {
         return Some(yara_detections.into_iter().next().unwrap());
     }
-    
+
     if let Some(detection) = static_analyzer.analyze_file(path) {
         return Some(detection);
     }
-    
+
     None
 }
 
-pub async fn handle_scan(db: &Database, config: &NkosiConfig, path: &Path, recursive: bool, quiet: bool, dry_run: bool) -> Result<()> {
+pub async fn handle_scan(
+    db: &Database,
+    config: &NkosiConfig,
+    path: &Path,
+    recursive: bool,
+    quiet: bool,
+    dry_run: bool,
+) -> Result<()> {
     println!("{}", "Scan en cours...".cyan().bold());
     println!("  Chemin: {}", path.display());
     println!("  Récursif: {}", recursive);
     if dry_run {
-        println!("  {} Mode dry-run (aucune action ne sera effectuée)", "⚠️".yellow());
+        println!(
+            "  {} Mode dry-run (aucune action ne sera effectuée)",
+            "⚠️".yellow()
+        );
     }
     println!();
-    
+
     let hash_engine = HashEngine::new();
     let yara_engine = YaraEngine::new();
     let static_analyzer = StaticAnalyzer::new();
     let risk_engine = RiskEngine::new(RiskConfig::default());
-    let response_engine = ResponseEngine::new(
-        config.quarantine.path.clone(),
-        Some(db.clone()),
-    );
-    
+    let response_engine = ResponseEngine::new(config.quarantine.path.clone(), Some(db.clone()));
+
     let pb = if !quiet {
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()
                 .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                .template("{spinner:.cyan} {msg}")?
+                .template("{spinner:.cyan} {msg}")?,
         );
         pb.set_message("Scan en cours...");
         Some(pb)
     } else {
         None
     };
-    
+
     let started_at = chrono::Utc::now();
     let mut scanned_files = 0u32;
     let mut detected_threats = 0u32;
     let mut quarantined_files = 0u32;
     let mut report_detections: Vec<report::DetectionEntry> = Vec::new();
-    
+
     if path.is_file() {
         if let Some(detection) = scan_file(path, &hash_engine, &yara_engine, &static_analyzer) {
             let assessment = risk_engine.evaluate(vec![detection]);
-            
+
             report_detections.push(report::DetectionEntry {
                 file_path: path.to_string_lossy().to_string(),
                 engine: "multi".to_string(),
@@ -82,23 +89,35 @@ pub async fn handle_scan(db: &Database, config: &NkosiConfig, path: &Path, recur
                 details: Some(assessment.details.clone()),
                 action: None,
             });
-            
-            println!("  {} {} - Score: {}/100 ({:?})", 
+
+            println!(
+                "  {} {} - Score: {}/100 ({:?})",
                 "⚠️".red().bold(),
                 path.display().to_string().red(),
                 assessment.score,
                 assessment.level
             );
-            
+
             if assessment.score >= 70 {
                 let action = risk_engine.get_recommended_action(&assessment.level);
                 if dry_run {
                     println!("    [DRY-RUN] Action ignorée: {:?}", action);
                 } else {
-                    match response_engine.execute_action(&action, Some(&path.to_string_lossy()), None, None, assessment.score, &assessment.details).await {
+                    match response_engine
+                        .execute_action(
+                            &action,
+                            Some(&path.to_string_lossy()),
+                            None,
+                            None,
+                            assessment.score,
+                            &assessment.details,
+                        )
+                        .await
+                    {
                         Ok(_) => {
                             println!("    Action: {:?}", action);
-                            report_detections.last_mut().unwrap().action = Some(format!("{:?}", action));
+                            report_detections.last_mut().unwrap().action =
+                                Some(format!("{:?}", action));
                             quarantined_files += 1;
                         }
                         Err(e) => println!("    Erreur action: {}", e),
@@ -114,9 +133,11 @@ pub async fn handle_scan(db: &Database, config: &NkosiConfig, path: &Path, recur
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
         {
-            if let Some(detection) = scan_file(entry.path(), &hash_engine, &yara_engine, &static_analyzer) {
+            if let Some(detection) =
+                scan_file(entry.path(), &hash_engine, &yara_engine, &static_analyzer)
+            {
                 let assessment = risk_engine.evaluate(vec![detection]);
-                
+
                 report_detections.push(report::DetectionEntry {
                     file_path: entry.path().to_string_lossy().to_string(),
                     engine: "multi".to_string(),
@@ -126,15 +147,16 @@ pub async fn handle_scan(db: &Database, config: &NkosiConfig, path: &Path, recur
                     details: Some(assessment.details.clone()),
                     action: None,
                 });
-                
+
                 if !quiet {
-                    println!("  {} {} - Score: {}/100", 
+                    println!(
+                        "  {} {} - Score: {}/100",
                         "⚠️".red(),
                         entry.path().display().to_string().red(),
                         assessment.score
                     );
                 }
-                
+
                 if assessment.score >= 70 {
                     let action = risk_engine.get_recommended_action(&assessment.level);
                     if dry_run {
@@ -142,8 +164,18 @@ pub async fn handle_scan(db: &Database, config: &NkosiConfig, path: &Path, recur
                             println!("    [DRY-RUN] Action ignorée: {:?}", action);
                         }
                     } else {
-                        let _ = response_engine.execute_action(&action, Some(&entry.path().to_string_lossy()), None, None, assessment.score, &assessment.details).await;
-                        report_detections.last_mut().unwrap().action = Some(format!("{:?}", action));
+                        let _ = response_engine
+                            .execute_action(
+                                &action,
+                                Some(&entry.path().to_string_lossy()),
+                                None,
+                                None,
+                                assessment.score,
+                                &assessment.details,
+                            )
+                            .await;
+                        report_detections.last_mut().unwrap().action =
+                            Some(format!("{:?}", action));
                         quarantined_files += 1;
                     }
                 }
@@ -152,7 +184,7 @@ pub async fn handle_scan(db: &Database, config: &NkosiConfig, path: &Path, recur
             scanned_files += 1;
         }
     }
-    
+
     if let Some(pb) = pb {
         pb.finish_with_message("Scan terminé");
     }
@@ -165,30 +197,33 @@ pub async fn handle_scan(db: &Database, config: &NkosiConfig, path: &Path, recur
         report_detections,
         started_at,
     );
-    
+
     let report_dir = std::path::Path::new("data/reports");
     std::fs::create_dir_all(report_dir)?;
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-    
+
     let json_path = report_dir.join(format!("scan_{}.json", timestamp));
     let txt_path = report_dir.join(format!("scan_{}.txt", timestamp));
-    
+
     report_gen.save_json(&scan_report, &json_path)?;
     report_gen.save_txt(&scan_report, &txt_path)?;
-    
+
     println!();
     println!("  {} Scan terminé:", "✅".green().bold());
     println!("    • Fichiers scannés: {}", scanned_files);
     println!("    • Menaces détectées: {}", detected_threats);
     println!("    • Mis en quarantaine: {}", quarantined_files);
     println!("    • Rapport: {}", json_path.display());
-    
+
     Ok(())
 }
 
 pub async fn handle_quick_scan(db: &Database, config: &NkosiConfig) -> Result<()> {
-    println!("{}", "Scan rapide des répertoires critiques...".cyan().bold());
-    
+    println!(
+        "{}",
+        "Scan rapide des répertoires critiques...".cyan().bold()
+    );
+
     let critical_dirs = vec![
         "/tmp",
         "/var/tmp",
@@ -205,14 +240,14 @@ pub async fn handle_quick_scan(db: &Database, config: &NkosiConfig) -> Result<()
         "/etc/systemd/system",
         "/etc/init.d",
     ];
-    
+
     for dir in &critical_dirs {
         if Path::new(dir).exists() {
             println!("  Scan de {}", dir);
             handle_scan(db, config, Path::new(dir), true, true, false).await?;
         }
     }
-    
+
     println!();
     println!("{}", "Scan rapide terminé!".green().bold());
     Ok(())
@@ -220,23 +255,16 @@ pub async fn handle_quick_scan(db: &Database, config: &NkosiConfig) -> Result<()
 
 pub async fn handle_full_scan(db: &Database, config: &NkosiConfig) -> Result<()> {
     println!("{}", "Scan complet du système...".cyan().bold());
-    
-    let root_dirs = vec![
-        "/",
-        "/home",
-        "/usr",
-        "/var",
-        "/tmp",
-        "/opt",
-    ];
-    
+
+    let root_dirs = vec!["/", "/home", "/usr", "/var", "/tmp", "/opt"];
+
     for dir in &root_dirs {
         if Path::new(dir).exists() {
             println!("  Scan de {}", dir);
             handle_scan(db, config, Path::new(dir), true, true, false).await?;
         }
     }
-    
+
     println!();
     println!("{}", "Scan complet terminé!".green().bold());
     Ok(())

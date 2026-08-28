@@ -122,6 +122,10 @@ async fn main() -> std::io::Result<()> {
             )
             .route("/api/scan", web::post().to(handlers::scan::trigger_scan))
             .route(
+                "/api/simulate",
+                web::post().to(handlers::simulate::simulate_threats),
+            )
+            .route(
                 "/api/firewall/status",
                 web::get().to(handlers::firewall::get_firewall_status),
             )

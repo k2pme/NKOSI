@@ -1,11 +1,11 @@
-pub mod rootkit;
+pub mod firewall;
 pub mod integrity;
 pub mod kernel;
+pub mod rootkit;
 pub mod ssh_bruteforce;
-pub mod firewall;
 
-pub use rootkit::RootkitScanner;
+pub use firewall::FirewallManager;
 pub use integrity::IntegrityScanner;
 pub use kernel::KernelScanner;
-pub use ssh_bruteforce::{SshBruteforceScanner, SshBruteforceConfig};
-pub use firewall::FirewallManager;
+pub use rootkit::RootkitScanner;
+pub use ssh_bruteforce::{SshBruteforceConfig, SshBruteforceScanner};

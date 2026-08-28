@@ -4,8 +4,11 @@ use colored::*;
 use nkosi_common::config::NkosiConfig;
 use nkosi_common::types::*;
 use nkosi_db::Database;
-use nkosi_engines::{HashEngine, YaraEngine, StaticAnalyzer};
-use nkosi_scanner::{RootkitScanner, IntegrityScanner, KernelScanner, SshBruteforceScanner, SshBruteforceConfig, FirewallManager};
+use nkosi_engines::{HashEngine, StaticAnalyzer, YaraEngine};
+use nkosi_scanner::{
+    FirewallManager, IntegrityScanner, KernelScanner, RootkitScanner, SshBruteforceConfig,
+    SshBruteforceScanner,
+};
 use nkosi_ti::UpdateService;
 use std::path::{Path, PathBuf};
 
@@ -14,6 +17,7 @@ mod report;
 
 use commands::quarantine::QuarantineAction;
 use commands::report::ReportCommand;
+use nkosi_common::config::SimulationScenario;
 
 #[derive(Parser)]
 #[command(name = "nkosi")]
@@ -28,102 +32,113 @@ struct Cli {
 enum Commands {
     /// Afficher l'état du système
     Status,
-    
+
     /// Scanner des fichiers ou répertoires
     Scan {
         /// Chemin à scanner
         #[arg(required = true)]
         path: PathBuf,
-        
+
         /// Scan récursif
         #[arg(short, long, default_value = "true")]
         recursive: bool,
-        
+
         /// Mode silencieux (pas de progression)
         #[arg(short, long)]
         quiet: bool,
-        
+
         /// Mode dry-run (affiche sans agir)
         #[arg(long)]
         dry_run: bool,
     },
-    
+
     /// Scanner rapidement les répertoires système critiques
     Quick,
-    
+
     /// Scanner tout le système
     Full,
-    
+
     /// Scanner les rootkits
     Rootkit,
-    
+
     /// Scanner l'intégrité système
     Integrity {
         /// Créer une nouvelle baseline
         #[arg(short, long)]
         baseline: bool,
     },
-    
+
     /// Scanner les modules kernel
     Kernel,
-    
+
     /// Scanner les tentatives de brute-force SSH
     Ssh {
         /// Seuil d'alerte (nombre de tentatives échouées)
         #[arg(short = 't', long, default_value = "5")]
         threshold: u32,
-        
+
         /// Seuil de blocage automatique
         #[arg(long, default_value = "10")]
         block_threshold: u32,
-        
+
         /// Blocage automatique via iptables
         #[arg(short, long)]
         block: bool,
     },
-    
+
     /// Gérer le pare-feu NKOSI
     Firewall {
         #[command(subcommand)]
         action: FirewallAction,
     },
-    
+
     /// Gérer la quarantaine
     Quarantine {
         #[command(subcommand)]
         action: QuarantineAction,
     },
-    
+
     /// Mettre à jour les sources de menaces
     Update {
         /// Forcer la mise à jour
         #[arg(short, long)]
         force: bool,
     },
-    
+
     /// Afficher les logs récents
     Logs {
         /// Nombre de lignes à afficher
         #[arg(default_value = "50")]
         lines: usize,
     },
-    
+
     /// Scanner un processus spécifique
     Process {
         /// PID du processus
         pid: u32,
     },
-    
+
     /// Scanner un réseau
     Network {
         /// Adresse IP ou CIDR
         target: String,
     },
-    
+
     /// Gérer les backups de configuration
     Backup {
         #[command(subcommand)]
         action: BackupAction,
+    },
+
+    /// Simuler des menaces pour tester le système
+    Simulate {
+        /// Scénarios à simuler (ransomware, cryptominer, webshell, trojan, spyware, backdoor, all)
+        #[arg(short, long, default_value = "all")]
+        scenario: String,
+
+        /// Nombre de cycles de simulation
+        #[arg(short, long, default_value = "1")]
+        cycles: u32,
     },
 
     /// Rapport consolidé multi-agents
@@ -141,26 +156,26 @@ enum BackupAction {
         #[arg(short, long, default_value = "/var/backup/nkosi")]
         dir: String,
     },
-    
+
     /// Restaurer un backup
     Restore {
         /// Fichier de backup à restaurer
         file: String,
     },
-    
+
     /// Lister les backups
     List {
         /// Répertoire des backups
         #[arg(short, long, default_value = "/var/backup/nkosi")]
         dir: String,
     },
-    
+
     /// Supprimer les anciens backups (rotation)
     Prune {
         /// Nombre de backups à conserver
         #[arg(short, long, default_value = "7")]
         keep: usize,
-        
+
         /// Répertoire des backups
         #[arg(short, long, default_value = "/var/backup/nkosi")]
         dir: String,
@@ -171,70 +186,70 @@ enum BackupAction {
 enum FirewallAction {
     /// Afficher l'état du pare-feu
     Status,
-    
+
     /// Initialiser les chaînes NKOSI
     Init,
-    
+
     /// Vider les règles NKOSI
     Flush,
-    
+
     /// Bloquer une IP
     Block {
         /// IP à bloquer
         ip: String,
-        
+
         /// Commentaire
         #[arg(short, long)]
         comment: Option<String>,
-        
+
         /// Temporaire (auto-expire)
         #[arg(short, long)]
         temp: bool,
     },
-    
+
     /// Débloquer une IP
     Unblock {
         /// IP à débloquer
         ip: String,
     },
-    
+
     /// Ajouter une IP à la whitelist
     Whitelist {
         /// IP à whitelist
         ip: String,
-        
+
         /// Commentaire
         #[arg(short, long)]
         comment: Option<String>,
     },
-    
+
     /// Retirer une IP de la whitelist
     Unwhitelist {
         /// IP à retirer
         ip: String,
     },
-    
+
     /// Ajouter un rate limiting
     RateLimit {
         /// IP cible
         ip: String,
-        
+
         /// Nombre max de connexions
         #[arg(short = 'c', long, default_value = "30")]
         max_conn: u32,
-        
+
         /// Fenêtre temporelle en secondes
         #[arg(short = 'p', long, default_value = "60")]
         period: u32,
     },
-    
+
     /// Sauvegarder les règles
     Save {
         /// Fichier de sortie
         #[arg(default_value = "/etc/nkosi/iptables.rules")]
         path: String,
     },
-    
+
     /// Charger les règles depuis un fichier
     Load {
         /// Fichier d'entrée
@@ -244,9 +259,7 @@ enum FirewallAction {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("warn")
-        .init();
+    tracing_subscriber::fmt().with_env_filter("warn").init();
 
     let cli = Cli::parse();
     let config = load_config()?;
@@ -254,7 +267,12 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Status => commands::status::handle_status(&db).await?,
-        Commands::Scan { path, recursive, quiet, dry_run } => {
+        Commands::Scan {
+            path,
+            recursive,
+            quiet,
+            dry_run,
+        } => {
             commands::scan::handle_scan(&db, &config, &path, recursive, quiet, dry_run).await?;
         }
         Commands::Quick => commands::scan::handle_quick_scan(&db, &config).await?,
@@ -262,16 +280,28 @@ async fn main() -> Result<()> {
         Commands::Rootkit => handle_rootkit_scan().await?,
         Commands::Integrity { baseline } => handle_integrity_scan(baseline).await?,
         Commands::Kernel => handle_kernel_scan().await?,
-        Commands::Ssh { threshold, block_threshold, block } => {
+        Commands::Ssh {
+            threshold,
+            block_threshold,
+            block,
+        } => {
             handle_ssh_scan(threshold, block_threshold, block).await?;
         }
         Commands::Firewall { action } => handle_firewall(action).await?,
-        Commands::Quarantine { action } => commands::quarantine::handle_quarantine(action, &db).await?,
+        Commands::Quarantine { action } => {
+            commands::quarantine::handle_quarantine(action, &db).await?
+        }
         Commands::Update { force } => handle_update(&db, force).await?,
         Commands::Logs { lines } => show_logs(&db, lines).await?,
         Commands::Process { pid } => handle_process_scan(pid).await?,
         Commands::Network { target } => handle_network_scan(&target).await?,
         Commands::Backup { action } => handle_backup(action).await?,
+        Commands::Simulate { scenario, cycles } => {
+            let scenarios = parse_simulation_scenarios(&scenario);
+            for _ in 0..cycles {
+                commands::simulate::handle_simulate(&db, &config, scenarios.clone()).await?;
+            }
+        }
         Commands::Report { command } => match command {
             ReportCommand::Consolidated { output, format } => {
                 commands::report::handle_consolidated_report(&db, output.as_deref(), &format)?;
@@ -298,7 +328,7 @@ fn load_config() -> Result<NkosiConfig> {
 
 fn init_database(config: &NkosiConfig) -> Result<Database> {
     let db_path = &config.agent.db_path;
-    
+
     if let Some(parent) = db_path.parent()
         && parent.exists()
         && std::fs::create_dir_all(parent).is_ok()
@@ -306,12 +336,32 @@ fn init_database(config: &NkosiConfig) -> Result<Database> {
     {
         return Ok(db);
     }
-    
+
     let local_path = std::env::current_dir()?.join("data").join("nkosi.db");
     if let Some(parent) = local_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     Ok(Database::new(&local_path)?)
+}
+
+fn parse_simulation_scenarios(scenario: &str) -> Vec<SimulationScenario> {
+    match scenario.to_lowercase().as_str() {
+        "all" => vec![
+            SimulationScenario::Ransomware,
+            SimulationScenario::Cryptominer,
+            SimulationScenario::Webshell,
+            SimulationScenario::Trojan,
+            SimulationScenario::Spyware,
+            SimulationScenario::Backdoor,
+        ],
+        "ransomware" => vec![SimulationScenario::Ransomware],
+        "cryptominer" => vec![SimulationScenario::Cryptominer],
+        "webshell" => vec![SimulationScenario::Webshell],
+        "trojan" => vec![SimulationScenario::Trojan],
+        "spyware" => vec![SimulationScenario::Spyware],
+        "backdoor" => vec![SimulationScenario::Backdoor],
+        _ => vec![SimulationScenario::Ransomware],
+    }
 }
 
 async fn handle_backup(action: BackupAction) -> Result<()> {
@@ -338,8 +388,12 @@ async fn handle_backup(action: BackupAction) -> Result<()> {
 
             if output.status.success() {
                 let size = std::fs::metadata(&backup_file)?.len();
-                println!("  {} Backup créé: {} ({:.2} MB)", "✓".green(),
-                    backup_file.display(), size as f64 / 1_048_576.0);
+                println!(
+                    "  {} Backup créé: {} ({:.2} MB)",
+                    "✓".green(),
+                    backup_file.display(),
+                    size as f64 / 1_048_576.0
+                );
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 println!("  {} Erreur: {}", "✗".red(), stderr);
@@ -428,7 +482,11 @@ async fn handle_backup(action: BackupAction) -> Result<()> {
             for entry in &backups[..to_delete] {
                 let path = entry.path();
                 std::fs::remove_file(&path)?;
-                println!("  {} Supprimé: {}", "🗑️".red(), path.file_name().unwrap().to_string_lossy());
+                println!(
+                    "  {} Supprimé: {}",
+                    "🗑️".red(),
+                    path.file_name().unwrap().to_string_lossy()
+                );
             }
 
             println!("\n  {} {} backup(s) supprimé(s)", "✓".green(), to_delete);
@@ -440,9 +498,9 @@ async fn handle_backup(action: BackupAction) -> Result<()> {
 
 async fn handle_update(db: &Database, force: bool) -> Result<()> {
     println!("{}", "Mise à jour des sources de menaces...".cyan().bold());
-    
+
     let ti_service = UpdateService::new(db.clone(), 24);
-    
+
     if force {
         println!("  Mise à jour forcée en cours...");
         match ti_service.update_all().await {
@@ -456,7 +514,7 @@ async fn handle_update(db: &Database, force: bool) -> Result<()> {
             Err(e) => println!("{} Erreur: {}", "✗".red(), e),
         }
     }
-    
+
     match ti_service.get_stats() {
         Ok(stats) => {
             println!();
@@ -465,18 +523,18 @@ async fn handle_update(db: &Database, force: bool) -> Result<()> {
         }
         Err(e) => println!("  Erreur stats: {}", e),
     }
-    
+
     Ok(())
 }
 
 async fn show_logs(db: &Database, lines: usize) -> Result<()> {
     let event_repo = nkosi_db::EventRepository::new(db);
     let events = event_repo.get_recent(lines as i32)?;
-    
+
     println!("{}", "╔══════════════════════════════════════╗".cyan());
     println!("{}", "║        Logs NKOSI                    ║".cyan());
     println!("{}", "╚══════════════════════════════════════╝".cyan());
-    
+
     if events.is_empty() {
         println!();
         println!("  {}", "Aucun événement trouvé".dimmed());
@@ -484,31 +542,32 @@ async fn show_logs(db: &Database, lines: usize) -> Result<()> {
         for event in &events {
             println!(
                 "  [{}] {:?} - {} - {:?}",
-                event.timestamp,
-                event.event_type,
-                event.source_module,
-                event.severity
+                event.timestamp, event.event_type, event.source_module, event.severity
             );
         }
     }
-    
+
     Ok(())
 }
 
 async fn handle_process_scan(pid: u32) -> Result<()> {
     println!("Scan du processus PID: {}", pid);
-    
+
     let exe_path = format!("/proc/{}/exe", pid);
-    
+
     if let Ok(exe) = std::fs::read_link(&exe_path) {
         println!("  Exécutable réel: {}", exe.display());
-        
+
         let mut hash_engine = HashEngine::new();
         let yara_engine = YaraEngine::new_prefer_real();
         let static_analyzer = StaticAnalyzer::new();
-        
+
         if let Some(detection) = scan_file(&exe, &mut hash_engine, &yara_engine, &static_analyzer) {
-            println!("  {} Menace détectée: {:?}", "⚠️".red(), detection.detection_engine);
+            println!(
+                "  {} Menace détectée: {:?}",
+                "⚠️".red(),
+                detection.detection_engine
+            );
             println!("    Score: {}", detection.score_contribution);
             println!("    Détails: {:?}", detection.details);
         } else {
@@ -517,12 +576,12 @@ async fn handle_process_scan(pid: u32) -> Result<()> {
     } else {
         println!("  Impossible de lire le lien symbolique: {}", exe_path);
     }
-    
+
     let maps_path = format!("/proc/{}/maps", pid);
     if let Ok(maps) = std::fs::read_to_string(&maps_path) {
         let suspicious_patterns = vec!["rwxp", "[heap]", "[stack]"];
         let mut suspicious_count = 0;
-        
+
         for line in maps.lines() {
             for pattern in &suspicious_patterns {
                 if line.contains(pattern) {
@@ -530,16 +589,16 @@ async fn handle_process_scan(pid: u32) -> Result<()> {
                 }
             }
         }
-        
+
         println!("  Mappings suspects: {}", suspicious_count);
     }
-    
+
     Ok(())
 }
 
 async fn handle_network_scan(target: &str) -> Result<()> {
     println!("Scan réseau pour: {}", target);
-    
+
     if target.contains('/') {
         println!("  Type: CIDR");
     } else if target.parse::<std::net::IpAddr>().is_ok() {
@@ -547,10 +606,10 @@ async fn handle_network_scan(target: &str) -> Result<()> {
     } else {
         println!("  Type: Domaine");
     }
-    
+
     println!("  Vérification contre les indicateurs connus...");
     println!("  {} Vérification terminée", "✓".green());
-    
+
     Ok(())
 }
 
@@ -563,7 +622,11 @@ async fn handle_rootkit_scan() -> Result<()> {
     let scanner = RootkitScanner::new();
     let report = scanner.scan()?;
 
-    println!("  {} {}", "Score:".bold(), format!("{}/100", report.score).red());
+    println!(
+        "  {} {}",
+        "Score:".bold(),
+        format!("{}/100", report.score).red()
+    );
     println!("  {}", report.summary);
     println!();
 
@@ -601,14 +664,21 @@ async fn handle_integrity_scan(baseline_only: bool) -> Result<()> {
     if baseline_only {
         println!("  Création de la baseline...");
         let baseline = scanner.create_baseline()?;
-        println!("  {} Baseline créée: {} fichiers indexés",
-            "✓".green(), baseline.files.len());
+        println!(
+            "  {} Baseline créée: {} fichiers indexés",
+            "✓".green(),
+            baseline.files.len()
+        );
         return Ok(());
     }
 
     let report = scanner.scan()?;
 
-    println!("  {} {}", "Score:".bold(), format!("{}/100", report.score).red());
+    println!(
+        "  {} {}",
+        "Score:".bold(),
+        format!("{}/100", report.score).red()
+    );
     println!("  {}", report.summary);
     println!();
 
@@ -650,8 +720,16 @@ async fn handle_kernel_scan() -> Result<()> {
     let report = scanner.scan()?;
 
     println!("  {} {}", "Kernel:".bold(), report.kernel_version);
-    println!("  {} {} modules chargés", "Modules:".bold(), report.loaded_modules.len());
-    println!("  {} {}", "Score:".bold(), format!("{}/100", report.score).red());
+    println!(
+        "  {} {} modules chargés",
+        "Modules:".bold(),
+        report.loaded_modules.len()
+    );
+    println!(
+        "  {} {}",
+        "Score:".bold(),
+        format!("{}/100", report.score).red()
+    );
     println!("  {}", report.summary);
     println!();
 
@@ -694,9 +772,22 @@ async fn handle_ssh_scan(threshold: u32, block_threshold: u32, auto_block: bool)
     let report = scanner.scan()?;
 
     println!("  {} {}", "Fichier:".bold(), report.log_path);
-    println!("  {} {} lignes parsées", "Lignes:".bold(), report.log_lines_parsed);
-    println!("  {} {} échecs, {} succès", "Tentatives:".bold(), report.total_failed, report.total_success);
-    println!("  {} {}", "Score:".bold(), format!("{}/100", report.score).red());
+    println!(
+        "  {} {} lignes parsées",
+        "Lignes:".bold(),
+        report.log_lines_parsed
+    );
+    println!(
+        "  {} {} échecs, {} succès",
+        "Tentatives:".bold(),
+        report.total_failed,
+        report.total_success
+    );
+    println!(
+        "  {} {}",
+        "Score:".bold(),
+        format!("{}/100", report.score).red()
+    );
     println!("  {}", report.summary);
     println!();
 
@@ -738,9 +829,33 @@ async fn handle_firewall(action: FirewallAction) -> Result<()> {
             println!();
 
             let status = mgr.status()?;
-            println!("  {} {}", "IPv4:".bold(), if status.ipv4_available { "✓".green() } else { "✗".red() });
-            println!("  {} {}", "IPv6:".bold(), if status.ipv6_available { "✓".green() } else { "✗".red() });
-            println!("  {} {}", "Chaîne NKOSI:".bold(), if status.nkosi_chain_exists { "✓".green() } else { "✗".red() });
+            println!(
+                "  {} {}",
+                "IPv4:".bold(),
+                if status.ipv4_available {
+                    "✓".green()
+                } else {
+                    "✗".red()
+                }
+            );
+            println!(
+                "  {} {}",
+                "IPv6:".bold(),
+                if status.ipv6_available {
+                    "✓".green()
+                } else {
+                    "✗".red()
+                }
+            );
+            println!(
+                "  {} {}",
+                "Chaîne NKOSI:".bold(),
+                if status.nkosi_chain_exists {
+                    "✓".green()
+                } else {
+                    "✗".red()
+                }
+            );
             println!("  {} {}", "Règles:".bold(), status.rules_count);
             println!("  {} {} IPs", "Blacklist:".bold(), status.blacklist_count);
             println!("  {} {} IPs", "Whitelist:".bold(), status.whitelist_count);
@@ -811,7 +926,11 @@ async fn handle_firewall(action: FirewallAction) -> Result<()> {
                 Err(e) => println!("  {} Erreur: {}", "✗".red(), e),
             }
         }
-        FirewallAction::RateLimit { ip, max_conn, period } => {
+        FirewallAction::RateLimit {
+            ip,
+            max_conn,
+            period,
+        } => {
             println!("Rate limiting pour {}: {}/{}s", ip, max_conn, period);
             match mgr.add_rate_limit(&ip, max_conn, &period.to_string()) {
                 Ok(()) => println!("  {} Rate limit configuré", "✓".green()),
@@ -846,15 +965,15 @@ fn scan_file(
     if let Some(detection) = hash_engine.analyze_file(path) {
         return Some(detection);
     }
-    
+
     let yara_detections = yara_engine.scan_file(path);
     if !yara_detections.is_empty() {
         return Some(yara_detections.into_iter().next().unwrap());
     }
-    
+
     if let Some(detection) = static_analyzer.analyze_file(path) {
         return Some(detection);
     }
-    
+
     None
 }

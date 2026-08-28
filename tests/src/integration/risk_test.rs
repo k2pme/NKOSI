@@ -1,5 +1,5 @@
 use nkosi_common::types::*;
-use nkosi_risk::{RiskEngine, RiskConfig};
+use nkosi_risk::{RiskConfig, RiskEngine};
 
 fn make_detection(engine: DetectionEngine, score: u32) -> Detection {
     Detection {
@@ -53,7 +53,10 @@ pub fn test_risk_action_mapping() {
     assert!(matches!(clean_action, ResponseAction::Allow));
 
     let malicious_action = engine.get_recommended_action(&RiskLevel::Malicious);
-    assert!(matches!(malicious_action, ResponseAction::Quarantine | ResponseAction::Kill));
+    assert!(matches!(
+        malicious_action,
+        ResponseAction::Quarantine | ResponseAction::Kill
+    ));
 }
 
 #[test]
@@ -67,5 +70,8 @@ pub fn test_risk_multiple_detections() {
     let assessment = engine.evaluate(detections);
 
     // Score should be aggregated from multiple detections
-    assert!(assessment.score >= 30, "Score should reflect multiple detections");
+    assert!(
+        assessment.score >= 30,
+        "Score should reflect multiple detections"
+    );
 }

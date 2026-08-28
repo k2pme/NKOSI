@@ -149,7 +149,10 @@ pub fn test_file_event_variants() {
             },
         };
 
-        if let MonitorEvent::FileEvent { event_type: got, .. } = event {
+        if let MonitorEvent::FileEvent {
+            event_type: got, ..
+        } = event
+        {
             assert_eq!(got, event_type);
         } else {
             panic!("expected FileEvent");
@@ -175,7 +178,9 @@ pub fn test_event_bus_send_receive() {
 
     let received = rx.try_recv().expect("should receive event");
     match received {
-        MonitorEvent::FileEvent { path, event_type, .. } => {
+        MonitorEvent::FileEvent {
+            path, event_type, ..
+        } => {
             assert_eq!(path, "/test");
             assert_eq!(event_type, EventType::FileCreated);
         }
@@ -224,7 +229,6 @@ pub fn test_filesystem_monitor_config_with_temp_dir() {
     assert_eq!(watched.len(), 1);
 }
 
-
 #[test]
 pub fn test_filesystem_monitor_create_and_modify() {
     let dir = TempDir::new().unwrap();
@@ -249,10 +253,7 @@ pub fn test_filesystem_monitor_excluded_path() {
     use nkosi_monitors::FilesystemMonitor;
     use std::path::Path;
 
-    let excluded = vec![
-        PathBuf::from("/proc"),
-        PathBuf::from("/home/*/.cache"),
-    ];
+    let excluded = vec![PathBuf::from("/proc"), PathBuf::from("/home/*/.cache")];
 
     assert!(FilesystemMonitor::is_excluded(
         Path::new("/proc/1/status"),
@@ -293,7 +294,10 @@ pub fn test_process_event_missing_parent() {
         event_type: EventType::ProcessExited,
     };
 
-    if let MonitorEvent::ProcessEvent { ppid, event_type, .. } = event {
+    if let MonitorEvent::ProcessEvent {
+        ppid, event_type, ..
+    } = event
+    {
         assert_eq!(ppid, None);
         assert_eq!(event_type, EventType::ProcessExited);
     } else {

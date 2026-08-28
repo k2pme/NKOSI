@@ -1,6 +1,6 @@
 use crate::event_bus::{EventBus, FileMetadata, MonitorEvent};
+use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify, WatchDescriptor};
 use nkosi_common::types::EventType;
-use nix::sys::inotify::{AddWatchFlags, Inotify, InitFlags, WatchDescriptor};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -50,36 +50,25 @@ impl FilesystemMonitor {
         // watched trees (e.g. a full /home). Run it in a dedicated blocking
         // thread so the agent's main loop is never delayed (start returns at
         // once and the agent can proceed to connect/register with the central).
-        std::thread::spawn(move || {
-            match Inotify::init(InitFlags::empty()) {
-                Ok(inotify) => {
-                    let mut backend = InotifyBackend {
-                        inotify,
-                        watch_dirs: HashMap::new(),
-                        excluded: excluded.clone(),
-                        watch_budget: Self::inotify_watch_limit().saturating_sub(256),
-                    };
-                    for root in &watched {
-                        backend.add_watch_recursive(root);
-                    }
-                    if !backend.watch_dirs.is_empty() {
-                        info!(
-                            "Real-time monitoring active (inotify), {} directories watched",
-                            backend.watch_dirs.len()
-                        );
-                        backend.run(event_bus);
-                    } else {
-                        warn!("inotify: no directory could be watched, falling back to polling");
-                        let bus = event_bus.clone();
-                        let watched = watched.clone();
-                        std::thread::spawn(move || {
-                            let rt = tokio::runtime::Runtime::new().expect("rt");
-                            rt.block_on(Self::polling_loop(bus, watched, excluded));
-                        });
-                    }
+        std::thread::spawn(move || match Inotify::init(InitFlags::empty()) {
+            Ok(inotify) => {
+                let mut backend = InotifyBackend {
+                    inotify,
+                    watch_dirs: HashMap::new(),
+                    excluded: excluded.clone(),
+                    watch_budget: Self::inotify_watch_limit().saturating_sub(256),
+                };
+                for root in &watched {
+                    backend.add_watch_recursive(root);
                 }
-                Err(e) => {
-                    warn!("inotify unavailable ({}), falling back to polling", e);
+                if !backend.watch_dirs.is_empty() {
+                    info!(
+                        "Real-time monitoring active (inotify), {} directories watched",
+                        backend.watch_dirs.len()
+                    );
+                    backend.run(event_bus);
+                } else {
+                    warn!("inotify: no directory could be watched, falling back to polling");
                     let bus = event_bus.clone();
                     let watched = watched.clone();
                     std::thread::spawn(move || {
@@ -87,6 +76,15 @@ impl FilesystemMonitor {
                         rt.block_on(Self::polling_loop(bus, watched, excluded));
                     });
                 }
+            }
+            Err(e) => {
+                warn!("inotify unavailable ({}), falling back to polling", e);
+                let bus = event_bus.clone();
+                let watched = watched.clone();
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().expect("rt");
+                    rt.block_on(Self::polling_loop(bus, watched, excluded));
+                });
             }
         });
 
@@ -199,7 +197,11 @@ impl FilesystemMonitor {
         pi == p.len()
     }
 
-    async fn polling_loop(event_bus: Arc<EventBus>, watched_paths: Vec<PathBuf>, excluded: Vec<PathBuf>) {
+    async fn polling_loop(
+        event_bus: Arc<EventBus>,
+        watched_paths: Vec<PathBuf>,
+        excluded: Vec<PathBuf>,
+    ) {
         warn!("Using polling fallback (1s interval)");
         let mut known_files: HashMap<PathBuf, std::time::SystemTime> = HashMap::new();
 
@@ -212,8 +214,7 @@ impl FilesystemMonitor {
         loop {
             for path in &watched_paths {
                 if path.exists() {
-                    let mut current_files: HashMap<PathBuf, std::time::SystemTime> =
-                        HashMap::new();
+                    let mut current_files: HashMap<PathBuf, std::time::SystemTime> = HashMap::new();
 
                     Self::scan_directory(path, &excluded, &mut current_files);
 
@@ -433,7 +434,10 @@ mod tests {
 
     #[test]
     fn test_wildcard_match() {
-        assert!(FilesystemMonitor::wildcard_match("/home/bob/.cache", "/home/*/.cache"));
+        assert!(FilesystemMonitor::wildcard_match(
+            "/home/bob/.cache",
+            "/home/*/.cache"
+        ));
         assert!(!FilesystemMonitor::wildcard_match(
             "/home/bob/docs",
             "/home/*/.cache"
@@ -443,7 +447,10 @@ mod tests {
             "/home/*/.cache/*"
         ));
         assert!(FilesystemMonitor::wildcard_match("/a/b/.git", "*/.git"));
-        assert!(FilesystemMonitor::wildcard_match("/a/b/.git/objects", "*/.git/*"));
+        assert!(FilesystemMonitor::wildcard_match(
+            "/a/b/.git/objects",
+            "*/.git/*"
+        ));
     }
 
     #[test]
@@ -453,9 +460,18 @@ mod tests {
             PathBuf::from("/home/*/.cache"),
             PathBuf::from("*/node_modules"),
         ];
-        assert!(FilesystemMonitor::is_excluded(Path::new("/proc/1/cmdline"), &excluded));
-        assert!(FilesystemMonitor::is_excluded(Path::new("/x/proc/y"), &excluded));
-        assert!(FilesystemMonitor::is_excluded(Path::new("/home/alice/.cache"), &excluded));
+        assert!(FilesystemMonitor::is_excluded(
+            Path::new("/proc/1/cmdline"),
+            &excluded
+        ));
+        assert!(FilesystemMonitor::is_excluded(
+            Path::new("/x/proc/y"),
+            &excluded
+        ));
+        assert!(FilesystemMonitor::is_excluded(
+            Path::new("/home/alice/.cache"),
+            &excluded
+        ));
         assert!(FilesystemMonitor::is_excluded(
             Path::new("/home/alice/.cache/opencode/node_modules/foo"),
             &excluded

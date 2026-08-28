@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use nkosi_common::types::*;
+use std::collections::HashMap;
 
 pub struct HealthTracker {
     modules: HashMap<String, ModuleHealth>,
@@ -7,38 +7,53 @@ pub struct HealthTracker {
 
 impl HealthTracker {
     pub fn new() -> Self {
-        Self { modules: HashMap::new() }
+        Self {
+            modules: HashMap::new(),
+        }
     }
 
     pub fn record_ok(&mut self, name: &str) {
-        self.modules.insert(name.to_string(), ModuleHealth {
-            name: name.to_string(),
-            status: ModuleStatus::Ok,
-            message: None,
-            since: chrono::Utc::now(),
-        });
+        self.modules.insert(
+            name.to_string(),
+            ModuleHealth {
+                name: name.to_string(),
+                status: ModuleStatus::Ok,
+                message: None,
+                since: chrono::Utc::now(),
+            },
+        );
     }
 
     pub fn record_failed(&mut self, name: &str, reason: &str) {
-        self.modules.insert(name.to_string(), ModuleHealth {
-            name: name.to_string(),
-            status: ModuleStatus::Failed,
-            message: Some(reason.to_string()),
-            since: chrono::Utc::now(),
-        });
+        self.modules.insert(
+            name.to_string(),
+            ModuleHealth {
+                name: name.to_string(),
+                status: ModuleStatus::Failed,
+                message: Some(reason.to_string()),
+                since: chrono::Utc::now(),
+            },
+        );
     }
 
     pub fn record_disabled(&mut self, name: &str) {
-        self.modules.insert(name.to_string(), ModuleHealth {
-            name: name.to_string(),
-            status: ModuleStatus::Disabled,
-            message: None,
-            since: chrono::Utc::now(),
-        });
+        self.modules.insert(
+            name.to_string(),
+            ModuleHealth {
+                name: name.to_string(),
+                status: ModuleStatus::Disabled,
+                message: None,
+                since: chrono::Utc::now(),
+            },
+        );
     }
 
     pub fn agent_status(&self) -> AgentHealthStatus {
-        if self.modules.values().any(|m| m.status == ModuleStatus::Failed) {
+        if self
+            .modules
+            .values()
+            .any(|m| m.status == ModuleStatus::Failed)
+        {
             AgentHealthStatus::Degraded
         } else {
             AgentHealthStatus::Running
@@ -90,7 +105,8 @@ pub fn test_health_multiple_failures() {
     assert_eq!(tracker.agent_status(), AgentHealthStatus::Degraded);
 
     let snapshot = tracker.snapshot();
-    let failed: Vec<_> = snapshot.iter()
+    let failed: Vec<_> = snapshot
+        .iter()
         .filter(|m| m.status == ModuleStatus::Failed)
         .collect();
     assert_eq!(failed.len(), 2, "Should have 2 failed modules");

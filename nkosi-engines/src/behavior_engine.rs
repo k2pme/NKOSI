@@ -51,7 +51,7 @@ impl BehaviorEngine {
         severity: Severity,
     ) {
         let mut behaviors = self.process_behaviors.write().await;
-        
+
         let behavior = behaviors.entry(pid).or_insert_with(|| ProcessBehavior {
             pid,
             ppid,
@@ -78,10 +78,10 @@ impl BehaviorEngine {
 
     pub async fn check_file_access(&self, pid: u32, path: &Path) -> Option<Detection> {
         let behaviors = self.process_behaviors.read().await;
-        
+
         if let Some(behavior) = behaviors.get(&pid) {
             let path_str = path.to_string_lossy();
-            
+
             // Check for suspicious file access patterns
             if path_str.contains("/etc/shadow") || path_str.contains("/etc/passwd") {
                 return Some(Detection {
@@ -140,10 +140,12 @@ impl BehaviorEngine {
 
     pub async fn check_network_activity(&self, pid: u32, remote_addr: &str) -> Option<Detection> {
         let behaviors = self.process_behaviors.read().await;
-        
+
         if let Some(behavior) = behaviors.get(&pid) {
             // Check for suspicious network patterns
-            let network_events: Vec<_> = behavior.events.iter()
+            let network_events: Vec<_> = behavior
+                .events
+                .iter()
                 .filter(|e| e.event_type == "network_connection")
                 .collect();
 
@@ -159,7 +161,9 @@ impl BehaviorEngine {
                     score_contribution: 20,
                     details: Some(format!(
                         "Process {} (PID: {}) made {} network connections",
-                        behavior.executable, pid, network_events.len()
+                        behavior.executable,
+                        pid,
+                        network_events.len()
                     )),
                 });
             }
@@ -190,7 +194,7 @@ impl BehaviorEngine {
 
     pub async fn get_process_risk_score(&self, pid: u32) -> u32 {
         let behaviors = self.process_behaviors.read().await;
-        
+
         if let Some(behavior) = behaviors.get(&pid) {
             behavior.risk_score
         } else {
@@ -200,8 +204,9 @@ impl BehaviorEngine {
 
     pub async fn get_suspicious_processes(&self) -> Vec<ProcessBehavior> {
         let behaviors = self.process_behaviors.read().await;
-        
-        behaviors.values()
+
+        behaviors
+            .values()
             .filter(|b| b.risk_score >= 30)
             .cloned()
             .collect()
@@ -222,11 +227,9 @@ impl BehaviorEngine {
         }
 
         // Check for multiple event types
-        let event_types: Vec<_> = behavior.events.iter()
-            .map(|e| &e.event_type)
-            .collect();
+        let event_types: Vec<_> = behavior.events.iter().map(|e| &e.event_type).collect();
         let unique_types: Vec<_> = event_types.into_iter().collect();
-        
+
         if unique_types.len() > 3 {
             score += 20;
         }

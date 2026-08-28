@@ -1,13 +1,13 @@
-use crate::types::{Alert, AlertLevel, NotifyConfig};
-use crate::trait_notif::Notifier;
-use crate::email::EmailNotifier;
-use crate::webhook::WebhookNotifier;
-use crate::syslog::SyslogNotifier;
 use crate::console::ConsoleNotifier;
-use crate::telegram::TelegramNotifier;
+use crate::email::EmailNotifier;
 use crate::sms::SmsNotifier;
+use crate::syslog::SyslogNotifier;
+use crate::telegram::TelegramNotifier;
+use crate::trait_notif::Notifier;
+use crate::types::{Alert, AlertLevel, NotifyConfig};
+use crate::webhook::WebhookNotifier;
 use std::sync::Arc;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 pub struct NotifyManager {
     notifiers: Vec<Arc<dyn Notifier>>,
@@ -39,7 +39,10 @@ impl NotifyManager {
             match EmailNotifier::new(email_config.clone(), config.min_level.clone()) {
                 Ok(notifier) => {
                     manager.notifiers.push(Arc::new(notifier));
-                    info!("Email notifier configured: {}:{}", email_config.smtp_host, email_config.smtp_port);
+                    info!(
+                        "Email notifier configured: {}:{}",
+                        email_config.smtp_host, email_config.smtp_port
+                    );
                 }
                 Err(e) => warn!("Failed to configure email notifier: {}", e),
             }
@@ -48,10 +51,7 @@ impl NotifyManager {
         // Webhook notifiers
         if let Some(webhook_configs) = &config.webhook {
             for wh_config in webhook_configs {
-                let notifier = WebhookNotifier::new(
-                    wh_config.clone(),
-                    config.min_level.clone(),
-                );
+                let notifier = WebhookNotifier::new(wh_config.clone(), config.min_level.clone());
                 manager.notifiers.push(Arc::new(notifier));
                 info!("Webhook notifier configured: {}", wh_config.name);
             }
@@ -72,17 +72,26 @@ impl NotifyManager {
         if let Some(telegram_config) = &config.telegram {
             let notifier = TelegramNotifier::new(telegram_config.clone(), config.min_level.clone());
             manager.notifiers.push(Arc::new(notifier));
-            info!("Telegram notifier configured: chat_id={}", telegram_config.chat_id);
+            info!(
+                "Telegram notifier configured: chat_id={}",
+                telegram_config.chat_id
+            );
         }
 
         // SMS notifier
         if let Some(sms_config) = &config.sms {
             let notifier = SmsNotifier::new(sms_config.clone(), config.min_level.clone());
             manager.notifiers.push(Arc::new(notifier));
-            info!("SMS notifier configured: {} numbers", sms_config.to_numbers.len());
+            info!(
+                "SMS notifier configured: {} numbers",
+                sms_config.to_numbers.len()
+            );
         }
 
-        info!("NotifyManager initialized with {} notifiers", manager.notifiers.len());
+        info!(
+            "NotifyManager initialized with {} notifiers",
+            manager.notifiers.len()
+        );
         manager
     }
 

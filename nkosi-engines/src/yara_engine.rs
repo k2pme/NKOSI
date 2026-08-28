@@ -157,7 +157,10 @@ impl YaraEngine {
         let mut loaded = 0;
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map(|e| e == "yar" || e == "yara").unwrap_or(false)
+            if path
+                .extension()
+                .map(|e| e == "yar" || e == "yara")
+                .unwrap_or(false)
                 && let Ok(content) = std::fs::read_to_string(&path)
             {
                 let idx = self.rules.len() + loaded + 1;
@@ -170,12 +173,17 @@ impl YaraEngine {
         }
 
         if loaded > 0 {
-            info!("Loaded {} external YARA rules from {}", loaded, dir.display());
+            info!(
+                "Loaded {} external YARA rules from {}",
+                loaded,
+                dir.display()
+            );
         }
     }
 
     fn parse_yara_rule_file(path: &Path, content: &str, idx: usize) -> Option<YaraRule> {
-        let name = path.file_stem()
+        let name = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown")
             .to_string();
@@ -371,14 +379,15 @@ mod tests {
 
     #[test]
     fn test_default_rules_loaded() {
-        let _engine = YaraEngine::new();
+        let engine = YaraEngine::new();
         assert!(engine.get_rules().len() >= 4);
     }
 
     #[test]
     fn test_scan_clean_file() {
         let mut temp = NamedTempFile::new().unwrap();
-        temp.write_all(b"This is a clean file with no malicious content").unwrap();
+        temp.write_all(b"This is a clean file with no malicious content")
+            .unwrap();
         temp.flush().unwrap();
 
         let engine = YaraEngine::new();
@@ -389,7 +398,8 @@ mod tests {
     #[test]
     fn test_scan_cryptominer() {
         let mut temp = NamedTempFile::new().unwrap();
-        temp.write_all(b"stratum+tcp://pool.mining.com:3333").unwrap();
+        temp.write_all(b"stratum+tcp://pool.mining.com:3333")
+            .unwrap();
         temp.flush().unwrap();
 
         let engine = YaraEngine::new();
@@ -415,7 +425,8 @@ mod tests {
     #[test]
     fn test_scan_ransomware() {
         let mut temp = NamedTempFile::new().unwrap();
-        temp.write_all(b"All your files have been encrypted. Pay bitcoin to decrypt").unwrap();
+        temp.write_all(b"All your files have been encrypted. Pay bitcoin to decrypt")
+            .unwrap();
         temp.flush().unwrap();
 
         let engine = YaraEngine::new();
@@ -443,7 +454,6 @@ mod tests {
 
     #[test]
     fn test_matches_rule() {
-        let engine = YaraEngine::new();
         let rule = YaraRule {
             id: "TEST".to_string(),
             name: "Test".to_string(),

@@ -21,12 +21,16 @@ pub fn test_db_insert_event() {
 
     let mut event = nkosi_common::types::Event::new(
         nkosi_common::types::EventType::FileCreated,
-        "test_monitor"
+        "test_monitor",
     );
     event.file_path = Some("/tmp/test.txt".to_string());
 
     let result = repo.insert(&event);
-    assert!(result.is_ok(), "Event insert should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Event insert should succeed: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -38,7 +42,7 @@ pub fn test_db_insert_detection() {
     // Insert an event first (FK constraint)
     let event = nkosi_common::types::Event::new(
         nkosi_common::types::EventType::FileCreated,
-        "test_monitor"
+        "test_monitor",
     );
     event_repo.insert(&event).unwrap();
 
@@ -55,7 +59,11 @@ pub fn test_db_insert_detection() {
     };
 
     let result = repo.insert(&detection);
-    assert!(result.is_ok(), "Detection insert should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Detection insert should succeed: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -78,7 +86,11 @@ pub fn test_db_insert_indicator() {
     };
 
     let result = repo.insert(&indicator);
-    assert!(result.is_ok(), "Indicator insert should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Indicator insert should succeed: {:?}",
+        result.err()
+    );
 
     // Query back
     let found = repo.find_by_value("abc123def456").unwrap();
@@ -104,7 +116,11 @@ pub fn test_db_insert_quarantine() {
     };
 
     let result = repo.insert(&item);
-    assert!(result.is_ok(), "Quarantine insert should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Quarantine insert should succeed: {:?}",
+        result.err()
+    );
 
     let items = repo.get_active().unwrap();
     assert_eq!(items.len(), 1, "Should have one active quarantine item");
@@ -125,9 +141,16 @@ pub fn test_db_insert_incident() {
     };
 
     let result = repo.insert(&incident);
-    assert!(result.is_ok(), "Incident insert should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Incident insert should succeed: {:?}",
+        result.err()
+    );
 
     let found = repo.get_by_id(&incident.id).unwrap();
     assert!(found.is_some(), "Incident should be found");
-    assert_eq!(found.unwrap().status, nkosi_common::types::IncidentStatus::Open);
+    assert_eq!(
+        found.unwrap().status,
+        nkosi_common::types::IncidentStatus::Open
+    );
 }

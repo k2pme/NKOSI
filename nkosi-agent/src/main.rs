@@ -35,8 +35,10 @@ fn central_request<T>(message: T) -> Request<T> {
 }
 
 mod incidents;
+mod simulator;
 mod updater;
 use incidents::IncidentManager;
+use simulator::Simulator;
 
 // ── AC-15: Health tracker ──
 
@@ -397,6 +399,18 @@ async fn main() -> Result<()> {
     ));
     let incident_manager = Arc::new(tokio::sync::Mutex::new(IncidentManager::new(db.clone())));
 
+    let simulator = Simulator::new(
+        engines.hash.clone(),
+        engines.yara.clone(),
+        engines.static_analyzer.clone(),
+        engines.behavior.clone(),
+        risk_engine.clone(),
+        response_engine.clone(),
+        db.clone(),
+        notify_manager.clone(),
+        incident_manager.clone(),
+    );
+
     // TI updates are asynchronous. Refresh the in-memory hash set periodically so
     // a successful feed update becomes an active detection without a restart.
     let hash_engine = engines.hash.clone();
@@ -412,6 +426,26 @@ async fn main() -> Result<()> {
             }
         }
     });
+
+    if config.simulation.enabled {
+        info!(
+            "Simulation enabled: interval={}s, max_events_per_cycle={}, scenarios={:?}",
+            config.simulation.interval_seconds,
+            config.simulation.max_events_per_cycle,
+            config.simulation.scenarios
+        );
+        let simulator_clone = simulator;
+        let scenarios = config.simulation.scenarios.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+                config.simulation.interval_seconds,
+            ));
+            loop {
+                interval.tick().await;
+                let _ = simulator_clone.run_all(&scenarios).await;
+            }
+        });
+    }
 
     health.write().await.record_ok("engines");
 
@@ -532,23 +566,23 @@ async fn main() -> Result<()> {
 
 struct Engines {
     pub hash: Arc<HashEngine>,
-    pub yara: YaraEngine,
-    pub static_analyzer: StaticAnalyzer,
-    pub behavior: BehaviorEngine,
+    pub yara: Arc<YaraEngine>,
+    pub static_analyzer: Arc<StaticAnalyzer>,
+    pub behavior: Arc<BehaviorEngine>,
 }
 
 impl Engines {
     fn new(_config: &NkosiConfig, db: &Database) -> Self {
-        let hash = HashEngine::new();
+        let hash = Arc::new(HashEngine::new());
         match nkosi_db::ThreatIndicatorRepository::new(db).get_enabled_sha256_values() {
             Ok(hashes) => hash.load_threat_hashes(hashes),
             Err(e) => warn!("Failed to load TI hashes at startup: {}", e),
         }
         Self {
-            hash: Arc::new(hash),
-            yara: YaraEngine::new_prefer_real(),
-            static_analyzer: StaticAnalyzer::new(),
-            behavior: BehaviorEngine::new(),
+            hash,
+            yara: Arc::new(YaraEngine::new_prefer_real()),
+            static_analyzer: Arc::new(StaticAnalyzer::new()),
+            behavior: Arc::new(BehaviorEngine::new()),
         }
     }
 }

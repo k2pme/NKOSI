@@ -1,4 +1,4 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,12 +29,17 @@ struct AgentView {
     status: String,
 }
 
-fn agent_view(a: &central::AgentInfo, hb_map: &HashMap<String, &central::AgentHeartbeat>) -> AgentView {
+fn agent_view(
+    a: &central::AgentInfo,
+    hb_map: &HashMap<String, &central::AgentHeartbeat>,
+) -> AgentView {
     let hb = hb_map.get(&a.agent_id);
-    let online = hb.map(|h| {
-        let now = chrono::Utc::now().timestamp();
-        now - h.timestamp < 300
-    }).unwrap_or(false);
+    let online = hb
+        .map(|h| {
+            let now = chrono::Utc::now().timestamp();
+            now - h.timestamp < 300
+        })
+        .unwrap_or(false);
     AgentView {
         id: a.agent_id.clone(),
         hostname: a.hostname.clone(),
@@ -45,7 +50,11 @@ fn agent_view(a: &central::AgentInfo, hb_map: &HashMap<String, &central::AgentHe
         events_count: hb.map(|h| h.events_count).unwrap_or(0),
         threats_count: hb.map(|h| h.threats_count).unwrap_or(0),
         score: hb.map(|h| h.score).unwrap_or(0),
-        status: if online { "online".into() } else { "offline".into() },
+        status: if online {
+            "online".into()
+        } else {
+            "offline".into()
+        },
     }
 }
 
@@ -120,7 +129,9 @@ fn severity_rank(s: &str) -> u8 {
     }
 }
 
-fn build_snapshot_views(snapshot: &CentralSnapshot) -> (Vec<AgentView>, HashMap<String, &central::AgentHeartbeat>) {
+fn build_snapshot_views(
+    snapshot: &CentralSnapshot,
+) -> (Vec<AgentView>, HashMap<String, &central::AgentHeartbeat>) {
     let mut hb_map: HashMap<String, &central::AgentHeartbeat> = HashMap::new();
     for hb in &snapshot.heartbeats {
         hb_map.entry(hb.agent_id.clone()).or_insert(hb);
@@ -157,7 +168,11 @@ pub async fn get_agents(
         });
     }
     let total = agents.len();
-    HttpResponse::Ok().json(AgentsResponse { agents, total, timestamp: snapshot.last_refresh })
+    HttpResponse::Ok().json(AgentsResponse {
+        agents,
+        total,
+        timestamp: snapshot.last_refresh,
+    })
 }
 
 /// GET /console/events?agent_id=&severity=&host=
@@ -186,7 +201,10 @@ pub async fn get_events(
     }
     events.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
     let total = events.len();
-    HttpResponse::Ok().json(AlertsResponse { alerts: events, total })
+    HttpResponse::Ok().json(AlertsResponse {
+        alerts: events,
+        total,
+    })
 }
 
 /// GET /console/alerts?host=&severity=
@@ -229,8 +247,11 @@ pub async fn get_stats(state: web::Data<SnapshotState>) -> HttpResponse {
         .count() as u32;
     let total_agents = snapshot.agents.len() as u32;
 
-    let events_24h: Vec<&central::SecurityEvent> =
-        snapshot.events.iter().filter(|e| e.timestamp > one_day).collect();
+    let events_24h: Vec<&central::SecurityEvent> = snapshot
+        .events
+        .iter()
+        .filter(|e| e.timestamp > one_day)
+        .collect();
     let threats_24h = events_24h
         .iter()
         .filter(|e| severity_rank(&e.severity) >= 2)
@@ -239,7 +260,9 @@ pub async fn get_stats(state: web::Data<SnapshotState>) -> HttpResponse {
     let mut threats_by_severity: HashMap<String, u32> = HashMap::new();
     let mut events_by_agent: HashMap<String, u32> = HashMap::new();
     for e in &events_24h {
-        *events_by_agent.entry(host_of_event(&snapshot, e)).or_insert(0) += 1;
+        *events_by_agent
+            .entry(host_of_event(&snapshot, e))
+            .or_insert(0) += 1;
         *threats_by_severity.entry(e.severity.clone()).or_insert(0) += 1;
     }
 
@@ -270,11 +293,11 @@ pub async fn get_report(
 
     if let Some(host) = query.get("host") {
         agents.retain(|a| {
-            a.hostname.to_lowercase().contains(&host.to_lowercase())
-                || a.ip_address.contains(host)
+            a.hostname.to_lowercase().contains(&host.to_lowercase()) || a.ip_address.contains(host)
         });
     }
-    let agent_ids: std::collections::HashSet<String> = agents.iter().map(|a| a.id.clone()).collect();
+    let agent_ids: std::collections::HashSet<String> =
+        agents.iter().map(|a| a.id.clone()).collect();
 
     let mut threats: Vec<EventView> = snapshot
         .events
@@ -292,7 +315,10 @@ pub async fn get_report(
 
     let stats = compute_stats_from(&snapshot);
 
-    let limit = query.get("limit").and_then(|l| l.parse::<usize>().ok()).unwrap_or(50);
+    let limit = query
+        .get("limit")
+        .and_then(|l| l.parse::<usize>().ok())
+        .unwrap_or(50);
     threats.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
     threats.truncate(limit);
 
@@ -319,8 +345,11 @@ fn compute_stats_from(snapshot: &CentralSnapshot) -> StatsResponse {
         .filter(|h| now - h.timestamp < 300)
         .count() as u32;
     let total_agents = snapshot.agents.len() as u32;
-    let events_24h: Vec<&central::SecurityEvent> =
-        snapshot.events.iter().filter(|e| e.timestamp > one_day).collect();
+    let events_24h: Vec<&central::SecurityEvent> = snapshot
+        .events
+        .iter()
+        .filter(|e| e.timestamp > one_day)
+        .collect();
     let threats_24h = events_24h
         .iter()
         .filter(|e| severity_rank(&e.severity) >= 2)
@@ -328,7 +357,9 @@ fn compute_stats_from(snapshot: &CentralSnapshot) -> StatsResponse {
     let mut threats_by_severity: HashMap<String, u32> = HashMap::new();
     let mut events_by_agent: HashMap<String, u32> = HashMap::new();
     for e in &events_24h {
-        *events_by_agent.entry(host_of_event(snapshot, e)).or_insert(0) += 1;
+        *events_by_agent
+            .entry(host_of_event(snapshot, e))
+            .or_insert(0) += 1;
         *threats_by_severity.entry(e.severity.clone()).or_insert(0) += 1;
     }
     let score_sum: u64 = snapshot.heartbeats.iter().map(|h| u64::from(h.score)).sum();

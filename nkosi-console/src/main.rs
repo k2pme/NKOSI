@@ -2,8 +2,8 @@ mod central;
 mod handlers;
 
 use actix_cors::Cors;
-use actix_web::{web, App, HttpServer, middleware};
 use actix_files::Files;
+use actix_web::{App, HttpServer, middleware, web};
 use clap::Parser;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -12,7 +12,10 @@ use tracing::info;
 use crate::central::{CentralClient, CentralSnapshot};
 
 #[derive(Parser)]
-#[command(name = "nkosi-console", about = "NKOSI centralized multi-server console")]
+#[command(
+    name = "nkosi-console",
+    about = "NKOSI centralized multi-server console"
+)]
 struct Args {
     /// Central gRPC server address (host:port).
     #[arg(long, env = "NKOSI_CENTRAL_ADDR", default_value = "127.0.0.1:50051")]
@@ -40,8 +43,7 @@ async fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
     let client = CentralClient::new(args.central_addr.clone());
-    let snapshot_state: handlers::SnapshotState =
-        Arc::new(RwLock::new(CentralSnapshot::default()));
+    let snapshot_state: handlers::SnapshotState = Arc::new(RwLock::new(CentralSnapshot::default()));
 
     // Warm the snapshot once before serving so the dashboard isn't empty.
     {
@@ -90,7 +92,10 @@ async fn main() -> std::io::Result<()> {
             .route("/console/alerts", web::get().to(handlers::get_alerts))
             .route("/console/stats", web::get().to(handlers::get_stats))
             .route("/console/report", web::get().to(handlers::get_report))
-            .route("/console/connectivity", web::get().to(handlers::get_connectivity))
+            .route(
+                "/console/connectivity",
+                web::get().to(handlers::get_connectivity),
+            )
             .service(Files::new("/", &dashboard_dir).index_file("index.html"))
     })
     .bind(args.bind)?

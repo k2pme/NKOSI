@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use crate::trait_notif::Notifier;
 use crate::types::{Alert, AlertLevel};
+use async_trait::async_trait;
 
 pub struct ConsoleNotifier {
     colored: bool,
@@ -28,11 +28,15 @@ impl ConsoleNotifier {
                 AlertLevel::Emergency => "\x1b[35m", // Magenta
             };
             let reset = "\x1b[0m";
-            
+
             format!(
                 "{}[{} {}]{} {} - {}{}",
-                color, level_str, alert.timestamp.format("%Y-%m-%d %H:%M:%S"), reset,
-                alert.title, alert.message,
+                color,
+                level_str,
+                alert.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                reset,
+                alert.title,
+                alert.message,
                 if let Some(details) = &alert.details {
                     format!("\n  Détails: {:?}", details)
                 } else {
@@ -42,8 +46,10 @@ impl ConsoleNotifier {
         } else {
             format!(
                 "[{} {}] {} - {}{}",
-                level_str, alert.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                alert.title, alert.message,
+                level_str,
+                alert.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                alert.title,
+                alert.message,
                 if let Some(details) = &alert.details {
                     format!("\n  Détails: {:?}", details)
                 } else {
@@ -58,13 +64,13 @@ impl ConsoleNotifier {
 impl Notifier for ConsoleNotifier {
     async fn send(&self, alert: &Alert) -> anyhow::Result<()> {
         let formatted = self.format_alert(alert);
-        
+
         match alert.level {
             AlertLevel::Info => tracing::info!("{}", formatted),
             AlertLevel::Warning => tracing::warn!("{}", formatted),
             AlertLevel::Critical | AlertLevel::Emergency => tracing::error!("{}", formatted),
         }
-        
+
         Ok(())
     }
 

@@ -44,9 +44,9 @@ pub fn scan_and_store_results() {
     // Verify stored
     let recent = event_repo.get_recent(10).unwrap();
     assert!(!recent.is_empty(), "Should have stored events");
-    let found = recent.iter().any(|e| {
-        e.file_path.as_ref() == Some(&clean_file.display().to_string())
-    });
+    let found = recent
+        .iter()
+        .any(|e| e.file_path.as_ref() == Some(&clean_file.display().to_string()));
     assert!(found, "Should find our event by file path");
 }
 
@@ -68,7 +68,10 @@ pub fn scan_risk_assessment_pipeline() {
     // If YARA detects it, verify risk assessment
     if let Some(det) = detection {
         let assessment = risk_engine.evaluate(vec![det]);
-        assert!(assessment.score > 0, "Risk score should be > 0 for detected file");
+        assert!(
+            assessment.score > 0,
+            "Risk score should be > 0 for detected file"
+        );
         // Level is not public, just verify score is positive
     }
 }

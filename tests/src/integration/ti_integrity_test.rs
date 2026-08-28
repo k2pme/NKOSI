@@ -1,11 +1,19 @@
-use nkosi_ti::integrity_check;
 use nkosi_common::types::IndicatorType;
+use nkosi_ti::integrity_check;
 
 #[test]
 fn test_min_size_validation_end_to_end() {
     // Simulate a feed that's too short
-    assert!(!integrity_check::validate_min_size("tiny", 50, "TestSource"));
-    assert!(integrity_check::validate_min_size(&"x".repeat(200), 50, "TestSource"));
+    assert!(!integrity_check::validate_min_size(
+        "tiny",
+        50,
+        "TestSource"
+    ));
+    assert!(integrity_check::validate_min_size(
+        &"x".repeat(200),
+        50,
+        "TestSource"
+    ));
 }
 
 #[test]
@@ -28,30 +36,66 @@ fn test_audit_hash_varies_with_content() {
 fn test_indicator_value_validation_all_types() {
     // Sha256
     let good_sha256 = "a".repeat(64);
-    assert!(integrity_check::validate_indicator_value(&IndicatorType::Sha256, &good_sha256));
-    assert!(!integrity_check::validate_indicator_value(&IndicatorType::Sha256, "short"));
+    assert!(integrity_check::validate_indicator_value(
+        &IndicatorType::Sha256,
+        &good_sha256
+    ));
+    assert!(!integrity_check::validate_indicator_value(
+        &IndicatorType::Sha256,
+        "short"
+    ));
 
     // Sha1
     let good_sha1 = "b".repeat(40);
-    assert!(integrity_check::validate_indicator_value(&IndicatorType::Sha1, &good_sha1));
-    assert!(!integrity_check::validate_indicator_value(&IndicatorType::Sha1, "short"));
+    assert!(integrity_check::validate_indicator_value(
+        &IndicatorType::Sha1,
+        &good_sha1
+    ));
+    assert!(!integrity_check::validate_indicator_value(
+        &IndicatorType::Sha1,
+        "short"
+    ));
 
     // Md5
     let good_md5 = "c".repeat(32);
-    assert!(integrity_check::validate_indicator_value(&IndicatorType::Md5, &good_md5));
-    assert!(!integrity_check::validate_indicator_value(&IndicatorType::Md5, "short"));
+    assert!(integrity_check::validate_indicator_value(
+        &IndicatorType::Md5,
+        &good_md5
+    ));
+    assert!(!integrity_check::validate_indicator_value(
+        &IndicatorType::Md5,
+        "short"
+    ));
 
     // IP
-    assert!(integrity_check::validate_indicator_value(&IndicatorType::Ip, "10.0.0.1:80"));
-    assert!(!integrity_check::validate_indicator_value(&IndicatorType::Ip, "bad-ip"));
+    assert!(integrity_check::validate_indicator_value(
+        &IndicatorType::Ip,
+        "10.0.0.1:80"
+    ));
+    assert!(!integrity_check::validate_indicator_value(
+        &IndicatorType::Ip,
+        "bad-ip"
+    ));
 
     // Domain
-    assert!(integrity_check::validate_indicator_value(&IndicatorType::Domain, "evil.com"));
-    assert!(!integrity_check::validate_indicator_value(&IndicatorType::Domain, "nodot"));
+    assert!(integrity_check::validate_indicator_value(
+        &IndicatorType::Domain,
+        "evil.com"
+    ));
+    assert!(!integrity_check::validate_indicator_value(
+        &IndicatorType::Domain,
+        "nodot"
+    ));
 
     // Url
-    assert!(integrity_check::validate_indicator_value(&IndicatorType::Url, "https://evil.com"));
-    assert!(!integrity_check::validate_indicator_value(&IndicatorType::Url, "ftp://evil.com"));
+    assert!(integrity_check::validate_indicator_value(
+        &IndicatorType::Url,
+        "https://evil.com"
+    ));
+    assert!(!integrity_check::validate_indicator_value(
+        &IndicatorType::Url,
+        "ftp://evil.com"
+    ));
 }
 
 #[test]

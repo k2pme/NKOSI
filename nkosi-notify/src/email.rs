@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use crate::trait_notif::Notifier;
 use crate::types::{Alert, AlertLevel, EmailConfig};
+use async_trait::async_trait;
 use lettre::message::header::ContentType;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
@@ -23,10 +23,7 @@ impl EmailNotifier {
             AlertLevel::Emergency => "EMERGENCY",
         };
 
-        let subject = format!(
-            "[NKOSI {}] {}",
-            level_str, alert.title
-        );
+        let subject = format!("[NKOSI {}] {}", level_str, alert.title);
 
         let body = format!(
             "NKOSI Security Alert\n\n\
@@ -57,11 +54,9 @@ impl EmailNotifier {
 
     fn send_sync(&self, alert: &Alert) -> anyhow::Result<()> {
         let email = self.create_email(alert)?;
-        
-        let credentials = Credentials::new(
-            self.config.username.clone(),
-            self.config.password.clone(),
-        );
+
+        let credentials =
+            Credentials::new(self.config.username.clone(), self.config.password.clone());
 
         let mailer = SmtpTransport::relay(&self.config.smtp_host)?
             .port(self.config.smtp_port)
@@ -69,7 +64,7 @@ impl EmailNotifier {
             .build();
 
         mailer.send(&email)?;
-        
+
         Ok(())
     }
 }
@@ -79,7 +74,7 @@ impl Notifier for EmailNotifier {
     async fn send(&self, alert: &Alert) -> anyhow::Result<()> {
         let config = self.config.clone();
         let alert_clone = alert.clone();
-        
+
         tokio::task::spawn_blocking(move || {
             let notifier = EmailNotifier {
                 config,

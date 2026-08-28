@@ -119,15 +119,10 @@ impl SshBruteforceScanner {
 
     /// Parse auth.log and extract SSH attempts
     fn parse_auth_log(&self, content: &str) -> Result<Vec<SshAttempt>> {
-        let re_failed = Regex::new(
-            r"Failed password for (?:invalid user )?(\S+) from (\S+) port \d+"
-        )?;
-        let re_accepted = Regex::new(
-            r"Accepted password for (\S+) from (\S+) port \d+"
-        )?;
-        let re_timestamp = Regex::new(
-            r"^(\w+\s+\d+\s+\d+:\d+:\d+)"
-        )?;
+        let re_failed =
+            Regex::new(r"Failed password for (?:invalid user )?(\S+) from (\S+) port \d+")?;
+        let re_accepted = Regex::new(r"Accepted password for (\S+) from (\S+) port \d+")?;
+        let re_timestamp = Regex::new(r"^(\w+\s+\d+\s+\d+:\d+:\d+)")?;
 
         let mut attempts = Vec::new();
         let mut current_timestamp = String::new();
@@ -199,10 +194,12 @@ impl SshBruteforceScanner {
                     total_attempts: total,
                     failed_attempts: failed_count,
                     usernames_targeted: usernames,
-                    first_attempt: ip_attempts.first()
+                    first_attempt: ip_attempts
+                        .first()
                         .map(|a| a.timestamp.clone())
                         .unwrap_or_default(),
-                    last_attempt: ip_attempts.last()
+                    last_attempt: ip_attempts
+                        .last()
                         .map(|a| a.timestamp.clone())
                         .unwrap_or_default(),
                     blocked: false,

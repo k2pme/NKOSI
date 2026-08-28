@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use crate::types::{Alert, AlertLevel};
 use anyhow::Result;
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait Notifier: Send + Sync {

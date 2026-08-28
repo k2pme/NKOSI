@@ -1,76 +1,76 @@
-# NKOSI — Guide d'installation
+# NKOSI — Installation Guide
 
-NKOSI est un antivirus/EDR (linux) écrit en Rust, organisé en workspace de
-16 crates. Ce guide couvre l'installation complète : prérequis système,
-compilation, déploiement des binaires, services systemd et désinstallation.
+NKOSI is a Linux antivirus/EDR written in Rust, organized as a workspace of
+16 crates. This guide covers full installation: system prerequisites,
+compilation, binary deployment, systemd services, and uninstallation.
 
-## 1. Prérequis
+## 1. Prerequisites
 
-Voir `doc/PREREQUIS.md` pour le détail. En résumé, Cargo gère les dépendances
-Rust, mais quelques outils/bibliothèques système sont nécessaires :
+See `doc/PREREQUIS.md` for details. In summary, Cargo manages Rust
+dependencies, but a few system tools/libraries are required:
 
-- **protoc** (protobuf compiler) — obligatoire (build des crates gRPC)
-- **libyara-dev** — obligatoire (moteur YARA réel, feature `real-yara`)
-- **iptables / ip6tables** — obligatoire au runtime (firewall)
-- **outils de build** : build-essential (gcc/make), pkg-config, cmake, unzip, curl
+- **protoc** (protobuf compiler) — required (builds gRPC crates)
+- **libyara-dev** — required (real YARA engine, `real-yara` feature)
+- **iptables / ip6tables** — required at runtime (firewall)
+- **build tools**: build-essential (gcc/make), pkg-config, cmake, unzip, curl
 
-Installez-les automatiquement avec :
+Install them automatically with:
 
 ```bash
 sudo ./scripts/install-deps.sh
 ```
 
-Options utiles :
+Useful options:
 
 ```bash
-sudo ./scripts/install-deps.sh --skip-protoc  # si protoc déjà présent
-sudo ./scripts/install-deps.sh --skip-yara    # dernier recours (sans moteur YARA)
+sudo ./scripts/install-deps.sh --skip-protoc  # if protoc is already installed
+sudo ./scripts/install-deps.sh --skip-yara    # last resort (no YARA engine)
 ```
 
-Le script détecte le gestionnaire de paquets du système
+The script detects the system package manager
 (apt/dnf/yum/pacman/zypper/apk/brew).
 
 ## 2. Compilation
 
 ```bash
-cargo build --workspace        # compilation en développement
-cargo build --release          # compilation optimisée (recommandée pour installer)
+cargo build --workspace        # development build
+cargo build --release          # optimized build (recommended for installation)
 ```
 
-Binaires produits dans `target/release/` :
+Binaries produced in `target/release/`:
 
-| Binaire                  | Rôle                                        |
+| Binary                  | Role                                        |
 |--------------------------|---------------------------------------------|
-| `nkosi-agent`            | Agent EDR local (surveillance, scan)        |
-| `nkosi-cli`              | Interface en ligne de commande              |
-| `nkosi-central`          | Serveur central (collecte gRPC, registry)   |
-| `nkosi-console`          | Console de supervision / dashboard          |
-| `nkosi-ui`               | Interface graphique                         |
+| `nkosi-agent`            | Local EDR agent (monitoring, scanning)      |
+| `nkosi-cli`              | Command-line interface                      |
+| `nkosi-central`          | Central server (gRPC collection, registry)  |
+| `nkosi-console`          | Monitoring console / dashboard              |
+| `nkosi-ui`               | Graphical user interface                    |
 
-## 3. Installation (binaires + service)
+## 3. Installation (binaries + service)
 
-Si la distribution fournit des `services systemd` (dossier `config/`), le
-Makefile automatise le déploiement :
+If the distribution provides `systemd services` (folder `config/`), the
+Makefile automates deployment:
 
 ```bash
 make install
 ```
 
-Ce qui installe :
+This installs:
 
-- les binaires dans `/usr/local/bin/`
-- la configuration dans `/etc/nkosi/`
-- les unités systemd (`nkosi-agent.service`, `nkosi-ti-update.timer`, ...)
-- les données dans `/var/lib/nkosi/` et les logs dans `/var/log/nkosi/`
+- binaries in `/usr/local/bin/`
+- configuration in `/etc/nkosi/`
+- systemd units (`nkosi-agent.service`, `nkosi-ti-update.timer`, ...)
+- data in `/var/lib/nkosi/` and logs in `/var/log/nkosi/`
 
-Puis démarrez le service :
+Then start the service:
 
 ```bash
 sudo systemctl start nkosi-agent
 sudo systemctl status nkosi-agent
 ```
 
-## 4. Installation manuelle
+## 4. Manual installation
 
 ```bash
 sudo mkdir -p /etc/nkosi /var/lib/nkosi /var/log/nkosi
@@ -80,15 +80,15 @@ sudo cp target/release/nkosi-ui    /usr/local/bin/
 sudo cp config/nkosi.toml /etc/nkosi/
 ```
 
-## 5. Désinstallation
+## 5. Uninstallation
 
 ```bash
 make uninstall
 ```
 
-Arrête et désactive les services, supprime les binaires et les unités systemd.
+Stops and disables services, removes binaries and systemd units.
 
-## 6. Vérification
+## 6. Verification
 
 ```bash
 nkosi-cli --version
@@ -96,28 +96,28 @@ nkosi-agent --version
 systemctl status nkosi-agent
 ```
 
-Consultez les logs :
+Check logs:
 
 ```bash
 journalctl -u nkosi-agent -f
 ```
 
-## 7. Déploiement serveur recommandé
+## 7. Recommended server deployment
 
-Pour protéger l'hôte, préférez le service systemd : le conteneur est adapté à
-la démonstration et aux composants centralisés, mais ne monte pas les systèmes
-de fichiers de l'hôte à surveiller. Exposez l'API et la console uniquement via
-un reverse proxy HTTPS, avec pare-feu réseau et une clé `NKOSI_API_KEYS` forte.
-Le central doit rester sur un réseau privé ou derrière un proxy qui authentifie
-les agents. Définissez `NKOSI_TRUST_PROXY=1` uniquement si l'accès direct à
-l'API est bloqué par le pare-feu ; cela autorise alors les en-têtes
-`X-Forwarded-For` du reverse proxy pour le rate limiting.
+To protect the host, prefer the systemd service: the container is suitable for
+demonstration and centralized components, but it does not mount the host
+filesystems to monitor. Expose the API and console only through an HTTPS
+reverse proxy, with network firewall and a strong `NKOSI_API_KEYS` key.
+The central server should remain on a private network or behind a proxy that
+authenticates agents. Set `NKOSI_TRUST_PROXY=1` only if direct API access is
+blocked by the firewall; this allows the reverse proxy's
+`X-Forwarded-For` headers for rate limiting.
 
-Pour protéger le canal agent-central au niveau applicatif, définissez la même
-valeur secrète de `NKOSI_CENTRAL_TOKEN` sur le central, chaque agent et la
-console. Si elle est absente, le comportement reste compatible avec les
-installations locales existantes ; ne laissez donc pas le central exposé.
+To protect the agent-central channel at the application level, set the same
+`NKOSI_CENTRAL_TOKEN` secret value on the central server, each agent, and the
+console. If it is absent, the behavior remains compatible with existing local
+installations; do not leave the central server exposed.
 
-L'agent Docker Compose est une démonstration de l'écosystème centralisé : il
-ne protège pas les fichiers de l'hôte. Pour une protection endpoint, installez
-`nkosi-agent` comme service systemd sur chaque serveur.
+The Docker Compose agent is a demonstration of the centralized ecosystem: it
+does not protect host files. For endpoint protection, install `nkosi-agent`
+as a systemd service on each server.

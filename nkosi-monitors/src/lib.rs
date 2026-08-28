@@ -1,9 +1,9 @@
-pub mod filesystem;
-pub mod process;
-pub mod network;
 pub mod event_bus;
+pub mod filesystem;
+pub mod network;
+pub mod process;
 
-pub use filesystem::FilesystemMonitor;
-pub use process::ProcessMonitor;
-pub use network::NetworkMonitor;
 pub use event_bus::{EventBus, MonitorEvent};
+pub use filesystem::FilesystemMonitor;
+pub use network::NetworkMonitor;
+pub use process::ProcessMonitor;

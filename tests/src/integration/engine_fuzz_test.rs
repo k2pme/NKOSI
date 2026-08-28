@@ -1,4 +1,4 @@
-use nkosi_engines::{YaraEngine, HashEngine, StaticAnalyzer};
+use nkosi_engines::{HashEngine, StaticAnalyzer, YaraEngine};
 use std::path::Path;
 
 #[test]

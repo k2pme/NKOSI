@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use crate::trait_notif::Notifier;
 use crate::types::{Alert, AlertLevel, TelegramConfig};
+use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
 
@@ -83,11 +83,7 @@ impl Notifier for TelegramNotifier {
             self.config.bot_token
         );
 
-        let response = self.client
-            .post(&url)
-            .json(&payload)
-            .send()
-            .await?;
+        let response = self.client.post(&url).json(&payload).send().await?;
 
         if !response.status().is_success() {
             let body = response.text().await.unwrap_or_default();

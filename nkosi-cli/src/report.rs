@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use chrono::{DateTime, Utc};
 use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,17 +55,13 @@ impl ReportGenerator {
         let completed_at = Utc::now();
         let duration = (completed_at - started_at).num_milliseconds() as f64 / 1000.0;
 
-        let threats_found = detections.iter()
-            .filter(|d| d.score >= 70)
-            .count() as u32;
-        let suspicious_found = detections.iter()
+        let threats_found = detections.iter().filter(|d| d.score >= 70).count() as u32;
+        let suspicious_found = detections
+            .iter()
             .filter(|d| d.score >= 30 && d.score < 70)
             .count() as u32;
 
-        let max_score = detections.iter()
-            .map(|d| d.score)
-            .max()
-            .unwrap_or(0);
+        let max_score = detections.iter().map(|d| d.score).max().unwrap_or(0);
 
         let risk_level = match max_score {
             0 => "Clean".to_string(),
@@ -74,7 +70,8 @@ impl ReportGenerator {
             _ => "Malicious".to_string(),
         };
 
-        let engines_triggered: Vec<String> = detections.iter()
+        let engines_triggered: Vec<String> = detections
+            .iter()
             .map(|d| d.engine.clone())
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
@@ -129,8 +126,14 @@ impl ReportGenerator {
         txt.push_str(&format!("Scan ID:      {}\n", report.scan_id));
         txt.push_str(&format!("Type:         {}\n", report.scan_type));
         txt.push_str(&format!("Target:       {}\n", report.target));
-        txt.push_str(&format!("Started:      {}\n", report.started_at.format("%Y-%m-%d %H:%M:%S UTC")));
-        txt.push_str(&format!("Completed:    {}\n", report.completed_at.format("%Y-%m-%d %H:%M:%S UTC")));
+        txt.push_str(&format!(
+            "Started:      {}\n",
+            report.started_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
+        txt.push_str(&format!(
+            "Completed:    {}\n",
+            report.completed_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         txt.push_str(&format!("Duration:     {:.1}s\n", report.duration_secs));
         txt.push_str(&format!("Files:        {}\n", report.files_scanned));
         txt.push_str("\n--- Summary ---\n");
@@ -138,13 +141,22 @@ impl ReportGenerator {
         txt.push_str(&format!("Max Score:    {}\n", report.summary.max_score));
         txt.push_str(&format!("Threats:      {}\n", report.threats_found));
         txt.push_str(&format!("Suspicious:   {}\n", report.suspicious_found));
-        txt.push_str(&format!("Engines:      {}\n", report.summary.engines_triggered.join(", ")));
+        txt.push_str(&format!(
+            "Engines:      {}\n",
+            report.summary.engines_triggered.join(", ")
+        ));
 
         if !report.detections.is_empty() {
             txt.push_str("\n--- Detections ---\n");
             for (i, d) in report.detections.iter().enumerate() {
-                txt.push_str(&format!("{}. [{}] {} (score: {}, conf: {:.0}%)\n",
-                    i + 1, d.engine, d.file_path, d.score, d.confidence * 100.0));
+                txt.push_str(&format!(
+                    "{}. [{}] {} (score: {}, conf: {:.0}%)\n",
+                    i + 1,
+                    d.engine,
+                    d.file_path,
+                    d.score,
+                    d.confidence * 100.0
+                ));
                 if let Some(ref rule) = d.rule_name {
                     txt.push_str(&format!("   Rule: {}\n", rule));
                 }

@@ -103,7 +103,11 @@ impl RootkitScanner {
         let score = self.calculate_score(&findings);
         let summary = self.generate_summary(&findings, score);
 
-        info!("Rootkit scan completed: {} findings, score: {}", findings.len(), score);
+        info!(
+            "Rootkit scan completed: {} findings, score: {}",
+            findings.len(),
+            score
+        );
 
         Ok(RootkitReport {
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -143,7 +147,8 @@ impl RootkitScanner {
             // Check for LD_PRELOAD in binary
             if let Ok(content) = std::fs::read(binary) {
                 let content_str = String::from_utf8_lossy(&content);
-                if content_str.contains("LD_PRELOAD") || content_str.contains("/etc/ld.so.preload") {
+                if content_str.contains("LD_PRELOAD") || content_str.contains("/etc/ld.so.preload")
+                {
                     findings.push(RootkitFinding {
                         category: "Tainted Binary".to_string(),
                         severity: "Critical".to_string(),
@@ -206,13 +211,23 @@ impl RootkitScanner {
                 if !parts.is_empty() {
                     let module_name = parts[0];
                     // Flag common rootkit module names
-                    let suspicious = ["diamorphine", "reptile", "kovid", "suckit", "knark", "repit"];
+                    let suspicious = [
+                        "diamorphine",
+                        "reptile",
+                        "kovid",
+                        "suckit",
+                        "knark",
+                        "repit",
+                    ];
                     for &s in &suspicious {
                         if module_name.to_lowercase().contains(s) {
                             findings.push(RootkitFinding {
                                 category: "Kernel Module".to_string(),
                                 severity: "Critical".to_string(),
-                                description: format!("Suspicious kernel module loaded: {}", module_name),
+                                description: format!(
+                                    "Suspicious kernel module loaded: {}",
+                                    module_name
+                                ),
                                 path: Some("/proc/modules".to_string()),
                                 details: Some(line.to_string()),
                             });
@@ -229,7 +244,8 @@ impl RootkitScanner {
                 findings.push(RootkitFinding {
                     category: "Hidden Connections".to_string(),
                     severity: "High".to_string(),
-                    description: "Suspiciously few network connections in /proc/net/tcp".to_string(),
+                    description: "Suspiciously few network connections in /proc/net/tcp"
+                        .to_string(),
                     path: Some("/proc/net/tcp".to_string()),
                     details: Some(format!("Lines: {}", line_count)),
                 });
@@ -268,12 +284,24 @@ impl RootkitScanner {
 
     fn is_whitelisted_module(name: &str) -> bool {
         let whitelist = [
-            "ext4", "xfs", "btrfs", "vfat", "ntfs",
-            "nf_conntrack", "iptable_filter", "ip6table_filter",
-            "bridge", "bonding", "8021q",
-            "snd", "snd_hda_intel",
-            "usbhid", "hid",
-            "drm", "i915", "nouveau",
+            "ext4",
+            "xfs",
+            "btrfs",
+            "vfat",
+            "ntfs",
+            "nf_conntrack",
+            "iptable_filter",
+            "ip6table_filter",
+            "bridge",
+            "bonding",
+            "8021q",
+            "snd",
+            "snd_hda_intel",
+            "usbhid",
+            "hid",
+            "drm",
+            "i915",
+            "nouveau",
         ];
         whitelist.iter().any(|&w| name.starts_with(w))
     }
@@ -284,7 +312,9 @@ impl RootkitScanner {
         // Check for connections on unusual ports
         if let Ok(content) = std::fs::read_to_string("/proc/net/tcp") {
             for (i, line) in content.lines().enumerate() {
-                if i == 0 { continue; } // Skip header
+                if i == 0 {
+                    continue;
+                } // Skip header
 
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 4 {
@@ -299,7 +329,9 @@ impl RootkitScanner {
                         // Flag high ports that could be backdoors
                         if port > 1024 && port < 65535 {
                             // Check if it's a known suspicious port
-                            let suspicious_ports = [4444, 5555, 6666, 7777, 8888, 9999, 12345, 31337, 1234, 54321];
+                            let suspicious_ports = [
+                                4444, 5555, 6666, 7777, 8888, 9999, 12345, 31337, 1234, 54321,
+                            ];
                             if suspicious_ports.contains(&port) {
                                 findings.push(RootkitFinding {
                                     category: "Suspicious Port".to_string(),
@@ -321,19 +353,24 @@ impl RootkitScanner {
     fn check_cron_jobs(&self) -> Vec<RootkitFinding> {
         let mut findings = Vec::new();
 
-        let cron_paths = [
-            "/etc/crontab",
-            "/etc/cron.d",
-            "/var/spool/cron/crontabs",
-        ];
+        let cron_paths = ["/etc/crontab", "/etc/cron.d", "/var/spool/cron/crontabs"];
 
         for cron_path in &cron_paths {
             if let Ok(content) = std::fs::read_to_string(cron_path) {
                 // Check for suspicious commands
                 let suspicious = [
-                    "wget", "curl", "nc ", "ncat", "bash -i",
-                    "/dev/tcp", "python -c", "perl -e", "ruby -e",
-                    "base64", "eval(", "chmod 777",
+                    "wget",
+                    "curl",
+                    "nc ",
+                    "ncat",
+                    "bash -i",
+                    "/dev/tcp",
+                    "python -c",
+                    "perl -e",
+                    "ruby -e",
+                    "base64",
+                    "eval(",
+                    "chmod 777",
                 ];
 
                 for line in content.lines() {
@@ -358,11 +395,7 @@ impl RootkitScanner {
     fn check_startup_scripts(&self) -> Vec<RootkitFinding> {
         let mut findings = Vec::new();
 
-        let init_dirs = [
-            "/etc/init.d",
-            "/etc/rc.local",
-            "/etc/systemd/system",
-        ];
+        let init_dirs = ["/etc/init.d", "/etc/rc.local", "/etc/systemd/system"];
 
         for dir in &init_dirs {
             if let Ok(entries) = std::fs::read_dir(dir) {
@@ -371,8 +404,13 @@ impl RootkitScanner {
                         && let Ok(content) = std::fs::read_to_string(entry.path())
                     {
                         let suspicious = [
-                            "wget", "curl", "nc ", "bash -i",
-                            "/dev/tcp", "base64", "chmod 777",
+                            "wget",
+                            "curl",
+                            "nc ",
+                            "bash -i",
+                            "/dev/tcp",
+                            "base64",
+                            "chmod 777",
                         ];
 
                         for line in content.lines() {
@@ -424,7 +462,11 @@ impl RootkitScanner {
         } else {
             format!(
                 "Found {} indicators: {} critical, {} high, {} medium. Risk score: {}/100",
-                findings.len(), critical, high, medium, score
+                findings.len(),
+                critical,
+                high,
+                medium,
+                score
             )
         }
     }
@@ -450,15 +492,13 @@ mod tests {
     #[test]
     fn test_calculate_score_critical() {
         let scanner = RootkitScanner::new();
-        let findings = vec![
-            RootkitFinding {
-                category: "test".to_string(),
-                severity: "Critical".to_string(),
-                description: "test".to_string(),
-                path: None,
-                details: None,
-            },
-        ];
+        let findings = vec![RootkitFinding {
+            category: "test".to_string(),
+            severity: "Critical".to_string(),
+            description: "test".to_string(),
+            path: None,
+            details: None,
+        }];
         let score = scanner.calculate_score(&findings);
         assert_eq!(score, 40);
     }

@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use crate::trait_notif::Notifier;
 use crate::types::{Alert, AlertLevel, SmsConfig};
+use async_trait::async_trait;
 use reqwest::Client;
 
 pub struct SmsNotifier {
@@ -26,10 +26,7 @@ impl SmsNotifier {
             AlertLevel::Emergency => "[NKOSI EMER]",
         };
 
-        let mut msg = format!(
-            "{} {} - {}",
-            prefix, alert.title, alert.message,
-        );
+        let mut msg = format!("{} {} - {}", prefix, alert.title, alert.message,);
 
         if let Some(details) = &alert.details {
             if let Some(score) = &details.score {
@@ -55,7 +52,8 @@ impl SmsNotifier {
             self.config.account_sid
         );
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .basic_auth(&self.config.account_sid, Some(&self.config.auth_token))
             .form(&[
@@ -77,11 +75,15 @@ impl SmsNotifier {
     async fn send_signalwire(&self, to: &str, body: &str) -> anyhow::Result<()> {
         let url = format!(
             "https://{}/api/laml/2010-04-01/Accounts/{}/Messages.json",
-            self.config.signalwire_host.as_deref().unwrap_or("signalwire.com"),
+            self.config
+                .signalwire_host
+                .as_deref()
+                .unwrap_or("signalwire.com"),
             self.config.account_sid
         );
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .basic_auth(&self.config.account_sid, Some(&self.config.auth_token))
             .form(&[

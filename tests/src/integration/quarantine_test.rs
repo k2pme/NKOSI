@@ -13,10 +13,7 @@ pub fn test_quarantine_flow() {
     let db_path = tmp_dir.path().join("test.db");
     let db = nkosi_db::Database::new(&db_path).unwrap();
 
-    let response = nkosi_response::ResponseEngine::new(
-        quarantine_path.clone(),
-        Some(db),
-    );
+    let response = nkosi_response::ResponseEngine::new(quarantine_path.clone(), Some(db));
 
     // Execute quarantine action (blocking call)
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -51,10 +48,7 @@ pub fn test_quarantine_items_list() {
     let db_path = tmp_dir.path().join("test.db");
     let db = nkosi_db::Database::new(&db_path).unwrap();
 
-    let response = nkosi_response::ResponseEngine::new(
-        quarantine_path,
-        Some(db),
-    );
+    let response = nkosi_response::ResponseEngine::new(quarantine_path, Some(db));
 
     let items = response.get_quarantine_items();
     assert!(items.is_empty(), "Empty quarantine should return no items");

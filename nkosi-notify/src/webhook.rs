@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use crate::trait_notif::Notifier;
 use crate::types::{Alert, AlertLevel, WebhookConfig, WebhookFormat};
+use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
 
@@ -84,9 +84,8 @@ impl WebhookNotifier {
 impl Notifier for WebhookNotifier {
     async fn send(&self, alert: &Alert) -> anyhow::Result<()> {
         let payload = self.format_payload(alert);
-        
-        let mut request = self.client.post(&self.config.url)
-            .json(&payload);
+
+        let mut request = self.client.post(&self.config.url).json(&payload);
 
         if let Some(headers) = &self.config.headers {
             for (key, value) in headers {
@@ -95,7 +94,7 @@ impl Notifier for WebhookNotifier {
         }
 
         let response = request.send().await?;
-        
+
         if !response.status().is_success() {
             return Err(anyhow::anyhow!(
                 "Webhook returned status: {}",

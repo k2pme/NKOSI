@@ -1,4 +1,4 @@
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use tracing::warn;
 
 use nkosi_common::types::IndicatorType;
@@ -26,15 +26,9 @@ pub fn compute_audit_hash(text: &str) -> String {
 
 pub fn validate_indicator_value(ioc_type: &IndicatorType, value: &str) -> bool {
     match ioc_type {
-        IndicatorType::Sha256 => {
-            value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
-        }
-        IndicatorType::Sha1 => {
-            value.len() == 40 && value.chars().all(|c| c.is_ascii_hexdigit())
-        }
-        IndicatorType::Md5 => {
-            value.len() == 32 && value.chars().all(|c| c.is_ascii_hexdigit())
-        }
+        IndicatorType::Sha256 => value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit()),
+        IndicatorType::Sha1 => value.len() == 40 && value.chars().all(|c| c.is_ascii_hexdigit()),
+        IndicatorType::Md5 => value.len() == 32 && value.chars().all(|c| c.is_ascii_hexdigit()),
         IndicatorType::Ip => {
             let ip_part = match value.rfind(':') {
                 Some(pos) => &value[..pos],
@@ -86,7 +80,10 @@ mod tests {
 
     #[test]
     fn sha256_valid() {
-        assert!(validate_indicator_value(&IndicatorType::Sha256, &"a".repeat(64)));
+        assert!(validate_indicator_value(
+            &IndicatorType::Sha256,
+            &"a".repeat(64)
+        ));
     }
 
     #[test]
@@ -96,12 +93,18 @@ mod tests {
 
     #[test]
     fn sha256_invalid_chars() {
-        assert!(!validate_indicator_value(&IndicatorType::Sha256, &"g".repeat(64)));
+        assert!(!validate_indicator_value(
+            &IndicatorType::Sha256,
+            &"g".repeat(64)
+        ));
     }
 
     #[test]
     fn md5_valid() {
-        assert!(validate_indicator_value(&IndicatorType::Md5, &"a".repeat(32)));
+        assert!(validate_indicator_value(
+            &IndicatorType::Md5,
+            &"a".repeat(32)
+        ));
     }
 
     #[test]
@@ -111,25 +114,37 @@ mod tests {
 
     #[test]
     fn sha1_valid() {
-        assert!(validate_indicator_value(&IndicatorType::Sha1, &"a".repeat(40)));
+        assert!(validate_indicator_value(
+            &IndicatorType::Sha1,
+            &"a".repeat(40)
+        ));
     }
 
     #[test]
     fn ip_port_valid() {
         assert!(validate_indicator_value(&IndicatorType::Ip, "1.2.3.4:443"));
-        assert!(validate_indicator_value(&IndicatorType::Ip, "10.0.0.1:8080"));
+        assert!(validate_indicator_value(
+            &IndicatorType::Ip,
+            "10.0.0.1:8080"
+        ));
     }
 
     #[test]
     fn ip_port_invalid() {
         assert!(!validate_indicator_value(&IndicatorType::Ip, "not-an-ip"));
-        assert!(!validate_indicator_value(&IndicatorType::Ip, "999.999.999.999:80"));
+        assert!(!validate_indicator_value(
+            &IndicatorType::Ip,
+            "999.999.999.999:80"
+        ));
     }
 
     #[test]
     fn domain_valid() {
         assert!(validate_indicator_value(&IndicatorType::Domain, "evil.com"));
-        assert!(validate_indicator_value(&IndicatorType::Domain, "sub.evil.com"));
+        assert!(validate_indicator_value(
+            &IndicatorType::Domain,
+            "sub.evil.com"
+        ));
     }
 
     #[test]
@@ -140,13 +155,22 @@ mod tests {
 
     #[test]
     fn url_valid() {
-        assert!(validate_indicator_value(&IndicatorType::Url, "http://evil.com/payload"));
-        assert!(validate_indicator_value(&IndicatorType::Url, "https://evil.com/payload"));
+        assert!(validate_indicator_value(
+            &IndicatorType::Url,
+            "http://evil.com/payload"
+        ));
+        assert!(validate_indicator_value(
+            &IndicatorType::Url,
+            "https://evil.com/payload"
+        ));
     }
 
     #[test]
     fn url_invalid() {
-        assert!(!validate_indicator_value(&IndicatorType::Url, "ftp://evil.com"));
+        assert!(!validate_indicator_value(
+            &IndicatorType::Url,
+            "ftp://evil.com"
+        ));
         assert!(!validate_indicator_value(&IndicatorType::Url, "not-a-url"));
     }
 }

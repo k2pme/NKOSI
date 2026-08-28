@@ -38,12 +38,18 @@ pub fn handle_consolidated_report(db: &Database, output: Option<&str>, format: &
     } else {
         let mut lines = Vec::new();
         lines.push("=== NKOSI Rapport Consolidé ===".to_string());
-        lines.push(format!("Généré le: {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")));
+        lines.push(format!(
+            "Généré le: {}",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
+        ));
         lines.push(String::new());
 
         if let Some(ref s) = stats {
             lines.push("--- Statistiques Globales ---".to_string());
-            lines.push(format!("  Agents total: {} ({} en ligne, {} hors ligne)", s.total_agents, s.online_agents, s.offline_agents));
+            lines.push(format!(
+                "  Agents total: {} ({} en ligne, {} hors ligne)",
+                s.total_agents, s.online_agents, s.offline_agents
+            ));
             lines.push(format!("  Événements total: {}", s.total_events));
             lines.push(format!("  Menaces détectées: {}", s.total_threats));
             lines.push(format!("  Fichiers en quarantaine: {}", s.total_quarantine));
@@ -57,7 +63,8 @@ pub fn handle_consolidated_report(db: &Database, output: Option<&str>, format: &
             for agent in &agents {
                 lines.push(format!(
                     "  {} ({}) — {} — Score: {} — Dernier seen: {}",
-                    agent.hostname, agent.ip_address,
+                    agent.hostname,
+                    agent.ip_address,
                     match agent.status {
                         AgentStatus::Online => "En ligne",
                         AgentStatus::Offline => "Hors ligne",

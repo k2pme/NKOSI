@@ -12,6 +12,7 @@ pub struct NkosiConfig {
     pub threat_intel: ThreatIntelConfig,
     pub logging: LoggingConfig,
     pub notifications: NotificationConfig,
+    pub simulation: SimulationConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,6 +219,41 @@ impl Default for NotificationConfig {
             sms: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SimulationConfig {
+    pub enabled: bool,
+    pub interval_seconds: u64,
+    pub max_events_per_cycle: u32,
+    pub scenarios: Vec<SimulationScenario>,
+}
+
+impl Default for SimulationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            interval_seconds: 60,
+            max_events_per_cycle: 3,
+            scenarios: vec![
+                SimulationScenario::Ransomware,
+                SimulationScenario::Cryptominer,
+                SimulationScenario::Webshell,
+                SimulationScenario::Trojan,
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SimulationScenario {
+    Ransomware,
+    Cryptominer,
+    Webshell,
+    Trojan,
+    Spyware,
+    Backdoor,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

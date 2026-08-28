@@ -1,17 +1,17 @@
 #[cfg(test)]
 mod integration {
-    pub mod scan_test;
-    pub mod risk_test;
-    pub mod quarantine_test;
-    pub mod db_test;
-    pub mod health_test;
-    pub mod firewall_test;
-    pub mod ti_integrity_test;
     pub mod agent_test;
-    pub mod scan_integration_test;
-    pub mod monitor_test;
-    pub mod engine_fuzz_test;
     pub mod api_test;
+    pub mod db_test;
+    pub mod engine_fuzz_test;
+    pub mod firewall_test;
+    pub mod health_test;
+    pub mod monitor_test;
+    pub mod quarantine_test;
+    pub mod risk_test;
+    pub mod scan_integration_test;
+    pub mod scan_test;
+    pub mod ti_integrity_test;
 }
 
 #[cfg(test)]
