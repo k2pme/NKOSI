@@ -1,16 +1,19 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::*;
-use indicatif::{ProgressBar, ProgressStyle};
 use nkosi_common::config::NkosiConfig;
 use nkosi_common::types::*;
 use nkosi_db::Database;
 use nkosi_engines::{HashEngine, YaraEngine, StaticAnalyzer};
-use nkosi_risk::{RiskEngine, RiskConfig};
-use nkosi_response::ResponseEngine;
 use nkosi_scanner::{RootkitScanner, IntegrityScanner, KernelScanner, SshBruteforceScanner, SshBruteforceConfig, FirewallManager};
 use nkosi_ti::UpdateService;
 use std::path::{Path, PathBuf};
+
+mod commands;
+mod report;
+
+use commands::quarantine::QuarantineAction;
+use commands::report::ReportCommand;
 
 #[derive(Parser)]
 #[command(name = "nkosi")]
@@ -122,6 +125,12 @@ enum Commands {
         #[command(subcommand)]
         action: BackupAction,
     },
+
+    /// Rapport consolidé multi-agents
+    Report {
+        #[command(subcommand)]
+        command: ReportCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -155,31 +164,6 @@ enum BackupAction {
         /// Répertoire des backups
         #[arg(short, long, default_value = "/var/backup/nkosi")]
         dir: String,
-    },
-}
-
-#[derive(Subcommand)]
-enum QuarantineAction {
-    /// Lister les éléments en quarantaine
-    List,
-    
-    /// Restaurer un fichier depuis la quarantaine
-    Restore {
-        /// ID de l'élément à restaurer
-        id: String,
-    },
-    
-    /// Supprimer un élément de la quarantaine
-    Delete {
-        /// ID de l'élément à supprimer
-        id: String,
-    },
-    
-    /// Purger tous les éléments de la quarantaine
-    Purge {
-        /// Confirmer la suppression
-        #[arg(short, long)]
-        confirm: bool,
     },
 }
 
@@ -269,12 +253,12 @@ async fn main() -> Result<()> {
     let db = init_database(&config)?;
 
     match cli.command {
-        Commands::Status => show_status(&db).await?,
+        Commands::Status => commands::status::handle_status(&db).await?,
         Commands::Scan { path, recursive, quiet, dry_run } => {
-            handle_scan(&db, &config, &path, recursive, quiet, dry_run).await?;
+            commands::scan::handle_scan(&db, &config, &path, recursive, quiet, dry_run).await?;
         }
-        Commands::Quick => handle_quick_scan(&db, &config).await?,
-        Commands::Full => handle_full_scan(&db, &config).await?,
+        Commands::Quick => commands::scan::handle_quick_scan(&db, &config).await?,
+        Commands::Full => commands::scan::handle_full_scan(&db, &config).await?,
         Commands::Rootkit => handle_rootkit_scan().await?,
         Commands::Integrity { baseline } => handle_integrity_scan(baseline).await?,
         Commands::Kernel => handle_kernel_scan().await?,
@@ -282,12 +266,17 @@ async fn main() -> Result<()> {
             handle_ssh_scan(threshold, block_threshold, block).await?;
         }
         Commands::Firewall { action } => handle_firewall(action).await?,
-        Commands::Quarantine { action } => handle_quarantine(action, &db).await?,
+        Commands::Quarantine { action } => commands::quarantine::handle_quarantine(action, &db).await?,
         Commands::Update { force } => handle_update(&db, force).await?,
         Commands::Logs { lines } => show_logs(&db, lines).await?,
         Commands::Process { pid } => handle_process_scan(pid).await?,
         Commands::Network { target } => handle_network_scan(&target).await?,
         Commands::Backup { action } => handle_backup(action).await?,
+        Commands::Report { command } => match command {
+            ReportCommand::Consolidated { output, format } => {
+                commands::report::handle_consolidated_report(&db, output.as_deref(), &format)?;
+            }
+        },
     }
 
     Ok(())
@@ -310,14 +299,12 @@ fn load_config() -> Result<NkosiConfig> {
 fn init_database(config: &NkosiConfig) -> Result<Database> {
     let db_path = &config.agent.db_path;
     
-    if let Some(parent) = db_path.parent() {
-        if parent.exists() {
-            if std::fs::create_dir_all(parent).is_ok() {
-                if let Ok(db) = Database::new(db_path) {
-                    return Ok(db);
-                }
-            }
-        }
+    if let Some(parent) = db_path.parent()
+        && parent.exists()
+        && std::fs::create_dir_all(parent).is_ok()
+        && let Ok(db) = Database::new(db_path)
+    {
+        return Ok(db);
     }
     
     let local_path = std::env::current_dir()?.join("data").join("nkosi.db");
@@ -325,159 +312,6 @@ fn init_database(config: &NkosiConfig) -> Result<Database> {
         std::fs::create_dir_all(parent)?;
     }
     Ok(Database::new(&local_path)?)
-}
-
-async fn show_status(db: &Database) -> Result<()> {
-    println!("{}", "╔══════════════════════════════════════╗".cyan());
-    println!("{}", "║       NKOSI Security Status          ║".cyan());
-    println!("{}", "╚══════════════════════════════════════╝".cyan());
-    
-    let event_repo = nkosi_db::EventRepository::new(db);
-    let events = event_repo.get_recent(100)?;
-    
-    let quarantine_repo = nkosi_db::QuarantineRepository::new(db);
-    let quarantine_items = quarantine_repo.get_active()?;
-    
-    println!();
-    println!("  {} Base de données:", "📊".blue());
-    println!("    • Événements: {}", events.len());
-    println!("    • Quarantaine: {}", quarantine_items.len());
-    
-    println!();
-    println!("  {} Événements récents:", "📋".green());
-    for event in events.iter().take(5) {
-        let severity_icon = match event.severity {
-            Severity::Critical => "🔴",
-            Severity::High => "🟠",
-            Severity::Medium => "🟡",
-            Severity::Low => "🟢",
-            Severity::Info => "⚪",
-        };
-        println!(
-            "    {} [{:?}] {} - {:?}",
-            severity_icon,
-            event.event_type,
-            event.source_module,
-            event.severity
-        );
-    }
-    
-    if events.is_empty() {
-        println!("    {}", "Aucun événement récent".dimmed());
-    }
-    
-    println!();
-    Ok(())
-}
-
-async fn handle_scan(db: &Database, config: &NkosiConfig, path: &Path, recursive: bool, quiet: bool, dry_run: bool) -> Result<()> {
-    println!("{}", "Scan en cours...".cyan().bold());
-    println!("  Chemin: {}", path.display());
-    println!("  Récursif: {}", recursive);
-    if dry_run {
-        println!("  {} Mode dry-run (aucune action ne sera effectuée)", "⚠️".yellow());
-    }
-    println!();
-    
-    let hash_engine = HashEngine::new();
-    let yara_engine = YaraEngine::new();
-    let static_analyzer = StaticAnalyzer::new();
-    let risk_engine = RiskEngine::new(RiskConfig::default());
-    let response_engine = ResponseEngine::new(
-        config.quarantine.path.clone(),
-        Some(db.clone()),
-    );
-    
-    let pb = if !quiet {
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                .template("{spinner:.cyan} {msg}")?
-        );
-        pb.set_message("Scan en cours...");
-        Some(pb)
-    } else {
-        None
-    };
-    
-    let mut scanned_files = 0u32;
-    let mut detected_threats = 0u32;
-    let mut quarantined_files = 0u32;
-    
-    if path.is_file() {
-        if let Some(detection) = scan_file(path, &hash_engine, &yara_engine, &static_analyzer) {
-            let assessment = risk_engine.evaluate(vec![detection]);
-            
-            println!("  {} {} - Score: {}/100 ({:?})", 
-                "⚠️".red().bold(),
-                path.display().to_string().red(),
-                assessment.score,
-                assessment.level
-            );
-            
-            if assessment.score >= 70 {
-                let action = risk_engine.get_recommended_action(&assessment.level);
-                if dry_run {
-                    println!("    [DRY-RUN] Action ignorée: {:?}", action);
-                } else {
-                    match response_engine.execute_action(&action, Some(&path.to_string_lossy()), None, assessment.score, &assessment.details).await {
-                        Ok(_) => {
-                            println!("    Action: {:?}", action);
-                            quarantined_files += 1;
-                        }
-                        Err(e) => println!("    Erreur action: {}", e),
-                    }
-                }
-            }
-            detected_threats += 1;
-        }
-        scanned_files += 1;
-    } else if path.is_dir() {
-        for entry in walkdir::WalkDir::new(path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-        {
-            if let Some(detection) = scan_file(entry.path(), &hash_engine, &yara_engine, &static_analyzer) {
-                let assessment = risk_engine.evaluate(vec![detection]);
-                
-                if !quiet {
-                    println!("  {} {} - Score: {}/100", 
-                        "⚠️".red(),
-                        entry.path().display().to_string().red(),
-                        assessment.score
-                    );
-                }
-                
-                if assessment.score >= 70 {
-                    let action = risk_engine.get_recommended_action(&assessment.level);
-                    if dry_run {
-                        if !quiet {
-                            println!("    [DRY-RUN] Action ignorée: {:?}", action);
-                        }
-                    } else {
-                        let _ = response_engine.execute_action(&action, Some(&entry.path().to_string_lossy()), None, assessment.score, &assessment.details).await;
-                        quarantined_files += 1;
-                    }
-                }
-                detected_threats += 1;
-            }
-            scanned_files += 1;
-        }
-    }
-    
-    if let Some(pb) = pb {
-        pb.finish_with_message("Scan terminé");
-    }
-    
-    println!();
-    println!("  {} Scan terminé:", "✅".green().bold());
-    println!("    • Fichiers scannés: {}", scanned_files);
-    println!("    • Menaces détectées: {}", detected_threats);
-    println!("    • Mis en quarantaine: {}", quarantined_files);
-    
-    Ok(())
 }
 
 async fn handle_backup(action: BackupAction) -> Result<()> {
@@ -543,16 +377,16 @@ async fn handle_backup(action: BackupAction) -> Result<()> {
 
             let backup_dir = std::path::Path::new(&dir);
             if !backup_dir.exists() {
-                println!("  {} Répertoire不存在: {}", "✗".red(), dir);
+                println!("  {} Répertoire introuvable: {}", "✗".red(), dir);
                 return Ok(());
             }
 
             let mut backups: Vec<_> = std::fs::read_dir(backup_dir)?
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map_or(false, |ext| ext == "gz"))
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "gz"))
                 .collect();
 
-            backups.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+            backups.sort_by_key(|e| std::cmp::Reverse(e.file_name()));
 
             if backups.is_empty() {
                 println!("  {} Aucun backup trouvé", "ℹ️".blue());
@@ -574,16 +408,16 @@ async fn handle_backup(action: BackupAction) -> Result<()> {
 
             let backup_dir = std::path::Path::new(&dir);
             if !backup_dir.exists() {
-                println!("  {} Répertoire不存在", "✗".red());
+                println!("  {} Répertoire introuvable", "✗".red());
                 return Ok(());
             }
 
             let mut backups: Vec<_> = std::fs::read_dir(backup_dir)?
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map_or(false, |ext| ext == "gz"))
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "gz"))
                 .collect();
 
-            backups.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+            backups.sort_by_key(|e| std::cmp::Reverse(e.file_name()));
 
             let to_delete = backups.len().saturating_sub(keep);
             if to_delete == 0 {
@@ -601,190 +435,6 @@ async fn handle_backup(action: BackupAction) -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-fn scan_file(
-    path: &Path,
-    hash_engine: &HashEngine,
-    yara_engine: &YaraEngine,
-    static_analyzer: &StaticAnalyzer,
-) -> Option<Detection> {
-    if let Some(detection) = hash_engine.analyze_file(path) {
-        return Some(detection);
-    }
-    
-    let yara_detections = yara_engine.scan_file(path);
-    if !yara_detections.is_empty() {
-        return Some(yara_detections.into_iter().next().unwrap());
-    }
-    
-    if let Some(detection) = static_analyzer.analyze_file(path) {
-        return Some(detection);
-    }
-    
-    None
-}
-
-async fn handle_quick_scan(db: &Database, config: &NkosiConfig) -> Result<()> {
-    println!("{}", "Scan rapide des répertoires critiques...".cyan().bold());
-    
-    let critical_dirs = vec![
-        "/tmp",
-        "/var/tmp",
-        "/usr/bin",
-        "/usr/sbin",
-        "/bin",
-        "/sbin",
-        "/home",
-        "/etc/cron.d",
-        "/etc/cron.daily",
-        "/etc/cron.hourly",
-        "/etc/cron.weekly",
-        "/etc/cron.monthly",
-        "/etc/systemd/system",
-        "/etc/init.d",
-    ];
-    
-    for dir in &critical_dirs {
-        if Path::new(dir).exists() {
-            println!("  Scan de {}", dir);
-            handle_scan(db, config, Path::new(dir), true, true, false).await?;
-        }
-    }
-    
-    println!();
-    println!("{}", "Scan rapide terminé!".green().bold());
-    Ok(())
-}
-
-async fn handle_full_scan(db: &Database, config: &NkosiConfig) -> Result<()> {
-    println!("{}", "Scan complet du système...".cyan().bold());
-    
-    let root_dirs = vec![
-        "/",
-        "/home",
-        "/usr",
-        "/var",
-        "/tmp",
-        "/opt",
-    ];
-    
-    for dir in &root_dirs {
-        if Path::new(dir).exists() {
-            println!("  Scan de {}", dir);
-            handle_scan(db, config, Path::new(dir), true, true, false).await?;
-        }
-    }
-    
-    println!();
-    println!("{}", "Scan complet terminé!".green().bold());
-    Ok(())
-}
-
-async fn handle_quarantine(action: QuarantineAction, db: &Database) -> Result<()> {
-    let repo = nkosi_db::QuarantineRepository::new(db);
-    let response_engine = ResponseEngine::new(
-        std::env::var("NKOSI_QUARANTINE_PATH")
-            .unwrap_or_else(|_| "/tmp/nkosi-quarantine".to_string())
-            .into(),
-        Some(db.clone()),
-    );
-    
-    match action {
-        QuarantineAction::List => {
-            let items = repo.get_active()?;
-            
-            println!("{}", "╔══════════════════════════════════════╗".cyan());
-            println!("{}", "║        Quarantine NKOSI              ║".cyan());
-            println!("{}", "╚══════════════════════════════════════╝".cyan());
-            
-            if items.is_empty() {
-                println!();
-                println!("  {}", "La quarantaine est vide".dimmed());
-            } else {
-                println!("  {} éléments en quarantaine:", items.len());
-                println!();
-                for item in &items {
-                    println!("  📁 {}", item.original_path.yellow());
-                    println!("    ID: {}", item.id);
-                    println!("    Score: {}/100", item.score);
-                    println!("    Date: {}", item.quarantined_at);
-                    println!();
-                }
-            }
-        }
-        QuarantineAction::Restore { id } => {
-            let uuid = uuid::Uuid::parse_str(&id)?;
-            match repo.get_by_id(&uuid) {
-                Ok(Some(item)) => {
-                    println!("Restauration de: {}", item.original_path);
-                    match response_engine.execute_action(
-                        &ResponseAction::Restore,
-                        Some(&item.quarantine_path),
-                        None,
-                        item.score,
-                        "Restauration manuelle",
-                    ).await {
-                        Ok(_) => println!("{} Restauration réussie!", "✓".green()),
-                        Err(e) => println!("{} Erreur: {}", "✗".red(), e),
-                    }
-                }
-                Ok(None) => println!("{} Élément non trouvé: {}", "✗".red(), id),
-                Err(e) => println!("{} Erreur: {}", "✗".red(), e),
-            }
-        }
-        QuarantineAction::Delete { id } => {
-            let uuid = uuid::Uuid::parse_str(&id)?;
-            match repo.get_by_id(&uuid) {
-                Ok(Some(item)) => {
-                    println!("Suppression de: {}", item.original_path);
-                    match response_engine.execute_action(
-                        &ResponseAction::Delete,
-                        Some(&item.quarantine_path),
-                        None,
-                        item.score,
-                        "Suppression manuelle",
-                    ).await {
-                        Ok(_) => println!("{} Suppression réussie!", "✓".green()),
-                        Err(e) => println!("{} Erreur: {}", "✗".red(), e),
-                    }
-                }
-                Ok(None) => println!("{} Élément non trouvé: {}", "✗".red(), id),
-                Err(e) => println!("{} Erreur: {}", "✗".red(), e),
-            }
-        }
-        QuarantineAction::Purge { confirm } => {
-            let items = repo.get_active()?;
-            
-            if items.is_empty() {
-                println!("La quarantaine est déjà vide");
-                return Ok(());
-            }
-            
-            if !confirm {
-                println!("⚠️  Ceci va supprimer {} éléments de la quarantaine", items.len());
-                println!("Utilisez --confirm pour confirmer");
-                return Ok(());
-            }
-            
-            println!("Suppression de {} éléments...", items.len());
-            for item in &items {
-                match response_engine.execute_action(
-                    &ResponseAction::Delete,
-                    Some(&item.quarantine_path),
-                    None,
-                    item.score,
-                    "Purge",
-                ).await {
-                    Ok(_) => println!("  ✓ {}", item.original_path),
-                    Err(e) => println!("  ✗ {} - Erreur: {}", item.original_path, e),
-                }
-            }
-            println!("{} Purge terminée!", "✓".green());
-        }
-    }
-    
     Ok(())
 }
 
@@ -853,11 +503,11 @@ async fn handle_process_scan(pid: u32) -> Result<()> {
     if let Ok(exe) = std::fs::read_link(&exe_path) {
         println!("  Exécutable réel: {}", exe.display());
         
-        let hash_engine = HashEngine::new();
+        let mut hash_engine = HashEngine::new();
         let yara_engine = YaraEngine::new();
         let static_analyzer = StaticAnalyzer::new();
         
-        if let Some(detection) = scan_file(&exe, &hash_engine, &yara_engine, &static_analyzer) {
+        if let Some(detection) = scan_file(&exe, &mut hash_engine, &yara_engine, &static_analyzer) {
             println!("  {} Menace détectée: {:?}", "⚠️".red(), detection.detection_engine);
             println!("    Score: {}", detection.score_contribution);
             println!("    Détails: {:?}", detection.details);
@@ -1187,3 +837,24 @@ async fn handle_firewall(action: FirewallAction) -> Result<()> {
     Ok(())
 }
 
+fn scan_file(
+    path: &Path,
+    hash_engine: &mut HashEngine,
+    yara_engine: &YaraEngine,
+    static_analyzer: &StaticAnalyzer,
+) -> Option<Detection> {
+    if let Some(detection) = hash_engine.analyze_file(path) {
+        return Some(detection);
+    }
+    
+    let yara_detections = yara_engine.scan_file(path);
+    if !yara_detections.is_empty() {
+        return Some(yara_detections.into_iter().next().unwrap());
+    }
+    
+    if let Some(detection) = static_analyzer.analyze_file(path) {
+        return Some(detection);
+    }
+    
+    None
+}

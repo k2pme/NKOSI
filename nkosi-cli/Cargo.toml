@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 nkosi-common = { path = "../nkosi-common" }
+nkosi-core = { path = "../nkosi-core" }
 nkosi-db = { path = "../nkosi-db" }
 nkosi-engines = { path = "../nkosi-engines" }
 nkosi-risk = { path = "../nkosi-risk" }
@@ -21,3 +22,5 @@ colored = "2"
 walkdir = "2"
 uuid.workspace = true
 chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
