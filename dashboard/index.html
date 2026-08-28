@@ -270,6 +270,7 @@
         <div class="tabs">
             <div class="tab active" onclick="showTab('overview')">Vue d'ensemble</div>
             <div class="tab" onclick="showTab('events')">Événements</div>
+            <div class="tab" onclick="showTab('agents')">Agents</div>
             <div class="tab" onclick="showTab('firewall')">Pare-feu</div>
         </div>
 
@@ -321,6 +322,64 @@
                     </thead>
                     <tbody id="events-table">
                         <tr><td colspan="5" class="loading">Chargement...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Agents Tab -->
+        <div id="tab-agents" class="tab-content" style="display:none">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="label">Agents Total</div>
+                    <div class="value" id="agents-total">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">En Ligne</div>
+                    <div class="value" id="agents-online" style="color: var(--accent-green)">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Hors Ligne</div>
+                    <div class="value" id="agents-offline" style="color: var(--accent-red)">—</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Alertes Actives</div>
+                    <div class="value" id="agents-alerts" style="color: var(--accent-yellow)">—</div>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>Agents Enregistrés</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--bg-card); text-align: left;">
+                            <th style="padding: 0.75rem;">Statut</th>
+                            <th style="padding: 0.75rem;">Nom</th>
+                            <th style="padding: 0.75rem;">Adresse IP</th>
+                            <th style="padding: 0.75rem;">Score</th>
+                            <th style="padding: 0.75rem;">Dernier Seen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="agents-table">
+                        <tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--text-secondary);">Chargement...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="chart-card" style="margin-top: 1rem;">
+                <h3>Alertes Récentes</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--bg-card); text-align: left;">
+                            <th style="padding: 0.75rem;">Sévérité</th>
+                            <th style="padding: 0.75rem;">Type</th>
+                            <th style="padding: 0.75rem;">Module</th>
+                            <th style="padding: 0.75rem;">Fichier</th>
+                            <th style="padding: 0.75rem;">Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alerts-table">
+                        <tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--text-secondary);">Chargement...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -454,6 +513,23 @@
                 document.getElementById('fw-blacklist').textContent = fw.blacklist_count;
                 document.getElementById('fw-whitelist').textContent = fw.whitelist_count;
             }
+
+            // Agents
+            const agentsData = await fetchAPI('/api/agents');
+            if (agentsData) {
+                updateAgentsTable(agentsData.agents || []);
+            }
+            const statsData = await fetchAPI('/api/stats/consolidated');
+            if (statsData) {
+                document.getElementById('agents-total').textContent = statsData.total_agents;
+                document.getElementById('agents-online').textContent = statsData.online_agents;
+                document.getElementById('agents-offline').textContent = statsData.offline_agents;
+            }
+            const alertsData = await fetchAPI('/api/alertes');
+            if (alertsData) {
+                document.getElementById('agents-alerts').textContent = alertsData.total;
+                updateAlertsTable(alertsData.alerts || []);
+            }
         }
 
         function updateSeverityChart(events) {
@@ -554,6 +630,43 @@
 
             document.getElementById(`tab-${name}`).style.display = 'block';
             event.target.classList.add('active');
+        }
+
+        function updateAgentsTable(agents) {
+            const tbody = document.getElementById('agents-table');
+            if (!agents.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--text-secondary);">Aucun agent enregistré</td></tr>';
+                return;
+            }
+            tbody.innerHTML = agents.map(a => `
+                <tr style="border-bottom: 1px solid var(--bg-card);">
+                    <td style="padding: 0.75rem;">
+                        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${a.status === 'Online' ? 'var(--accent-green)' : 'var(--accent-red)'}; margin-right:6px;"></span>
+                        ${a.status === 'Online' ? 'En ligne' : a.status === 'Degraded' ? 'Dégradé' : 'Hors ligne'}
+                    </td>
+                    <td style="padding: 0.75rem;">${a.hostname}</td>
+                    <td style="padding: 0.75rem;">${a.ip_address}</td>
+                    <td style="padding: 0.75rem;">${a.score}</td>
+                    <td style="padding: 0.75rem;">${a.last_seen}</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateAlertsTable(alerts) {
+            const tbody = document.getElementById('alerts-table');
+            if (!alerts.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--text-secondary);">Aucune alerte</td></tr>';
+                return;
+            }
+            tbody.innerHTML = alerts.slice(0, 20).map(a => `
+                <tr style="border-bottom: 1px solid var(--bg-card);">
+                    <td style="padding: 0.75rem; color: ${a.severity === 'Critical' ? 'var(--accent-red)' : a.severity === 'High' ? 'var(--accent-orange)' : 'var(--accent-yellow)'};">${a.severity}</td>
+                    <td style="padding: 0.75rem;">${a.event_type}</td>
+                    <td style="padding: 0.75rem;">${a.source_module}</td>
+                    <td style="padding: 0.75rem; max-width:200px; overflow:hidden; text-overflow:ellipsis;">${a.file_path || '—'}</td>
+                    <td style="padding: 0.75rem;">${a.score || '—'}</td>
+                </tr>
+            `).join('');
         }
 
         // Init
