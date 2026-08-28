@@ -1,8 +1,18 @@
 use crate::event_bus::{EventBus, FileMetadata, MonitorEvent};
 use nkosi_common::types::EventType;
+use nix::sys::inotify::{AddWatchFlags, Inotify, InitFlags, WatchDescriptor};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
+
+const IN_CREATE: u32 = 0x0000_0100;
+const IN_MOVED_TO: u32 = 0x0000_0080;
+const IN_DELETE: u32 = 0x0000_0200;
+const IN_MOVED_FROM: u32 = 0x0000_0040;
+const IN_MODIFY: u32 = 0x0000_0002;
+const IN_CLOSE_WRITE: u32 = 0x0000_0008;
+const IN_ISDIR: u32 = 0x4000_0000;
 
 pub struct FilesystemMonitor {
     watched_paths: Vec<PathBuf>,
@@ -27,20 +37,57 @@ impl FilesystemMonitor {
         info!("Starting filesystem monitor");
 
         let watched = Self::expand_patterns(&self.watched_paths);
+        let watched: Vec<PathBuf> = watched.into_iter().filter(|p| p.exists()).collect();
 
         for path in &watched {
-            if path.exists() {
-                info!("Watching: {}", path.display());
-            } else {
-                warn!("Path does not exist: {}", path.display());
-            }
+            info!("Watching: {}", path.display());
         }
 
         let event_bus = self.event_bus.clone();
         let excluded = self.excluded_paths.clone();
 
-        tokio::spawn(async move {
-            Self::monitor_loop(event_bus, watched, excluded).await;
+        // The recursive inotify watch setup can be very expensive on large
+        // watched trees (e.g. a full /home). Run it in a dedicated blocking
+        // thread so the agent's main loop is never delayed (start returns at
+        // once and the agent can proceed to connect/register with the central).
+        std::thread::spawn(move || {
+            match Inotify::init(InitFlags::empty()) {
+                Ok(inotify) => {
+                    let mut backend = InotifyBackend {
+                        inotify,
+                        watch_dirs: HashMap::new(),
+                        excluded: excluded.clone(),
+                        watch_budget: Self::inotify_watch_limit().saturating_sub(256),
+                    };
+                    for root in &watched {
+                        backend.add_watch_recursive(root);
+                    }
+                    if !backend.watch_dirs.is_empty() {
+                        info!(
+                            "Real-time monitoring active (inotify), {} directories watched",
+                            backend.watch_dirs.len()
+                        );
+                        backend.run(event_bus);
+                    } else {
+                        warn!("inotify: no directory could be watched, falling back to polling");
+                        let bus = event_bus.clone();
+                        let watched = watched.clone();
+                        std::thread::spawn(move || {
+                            let rt = tokio::runtime::Runtime::new().expect("rt");
+                            rt.block_on(Self::polling_loop(bus, watched, excluded));
+                        });
+                    }
+                }
+                Err(e) => {
+                    warn!("inotify unavailable ({}), falling back to polling", e);
+                    let bus = event_bus.clone();
+                    let watched = watched.clone();
+                    std::thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().expect("rt");
+                        rt.block_on(Self::polling_loop(bus, watched, excluded));
+                    });
+                }
+            }
         });
 
         Ok(())
@@ -96,55 +143,101 @@ impl FilesystemMonitor {
         }
     }
 
-    async fn monitor_loop(
-        event_bus: Arc<EventBus>,
-        watched_paths: Vec<PathBuf>,
-        excluded_paths: Vec<PathBuf>,
-    ) {
-        let mut known_files: std::collections::HashMap<PathBuf, std::time::SystemTime> = 
-            std::collections::HashMap::new();
+    /// Lit fs.inotify.max_user_watches (fallback 8192).
+    fn inotify_watch_limit() -> usize {
+        std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches")
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(8192)
+    }
 
-        // Initial scan
+    /// Exclusion : pattern littéral → sous-chaîne ; pattern avec `*` → glob
+    /// (le match exact OU tout chemin situé sous le répertoire correspondant).
+    pub fn is_excluded(path: &Path, excluded: &[PathBuf]) -> bool {
+        let path_str = path.to_string_lossy();
+        for pattern in excluded {
+            let Some(p) = pattern.to_str() else { continue };
+            if p.contains('*') {
+                let base = p.trim_end_matches('/');
+                if Self::wildcard_match(&path_str, base)
+                    || Self::wildcard_match(&path_str, &format!("{}/*", base))
+                {
+                    return true;
+                }
+            } else if path_str.contains(p) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Glob classique : `*` = n'importe quelle séquence (y compris `/`).
+    fn wildcard_match(s: &str, p: &str) -> bool {
+        let s: Vec<char> = s.chars().collect();
+        let p: Vec<char> = p.chars().collect();
+        let (mut si, mut pi) = (0usize, 0usize);
+        let (mut star, mut mark) = (None::<usize>, 0usize);
+        while si < s.len() {
+            if pi < p.len() && p[pi] == s[si] {
+                si += 1;
+                pi += 1;
+            } else if pi < p.len() && p[pi] == '*' {
+                star = Some(pi);
+                mark = si;
+                pi += 1;
+            } else if let Some(sp) = star {
+                pi = sp + 1;
+                mark += 1;
+                si = mark;
+            } else {
+                return false;
+            }
+        }
+        while pi < p.len() && p[pi] == '*' {
+            pi += 1;
+        }
+        pi == p.len()
+    }
+
+    async fn polling_loop(event_bus: Arc<EventBus>, watched_paths: Vec<PathBuf>, excluded: Vec<PathBuf>) {
+        warn!("Using polling fallback (1s interval)");
+        let mut known_files: HashMap<PathBuf, std::time::SystemTime> = HashMap::new();
+
         for path in &watched_paths {
             if path.exists() {
-                Self::scan_directory(path, &excluded_paths, &mut known_files);
+                Self::scan_directory(path, &excluded, &mut known_files);
             }
         }
 
-        // Monitor loop
         loop {
             for path in &watched_paths {
                 if path.exists() {
-                    let mut current_files: std::collections::HashMap<PathBuf, std::time::SystemTime> = 
-                        std::collections::HashMap::new();
-                    
-                    Self::scan_directory(path, &excluded_paths, &mut current_files);
+                    let mut current_files: HashMap<PathBuf, std::time::SystemTime> =
+                        HashMap::new();
 
-                    // Check for new files
+                    Self::scan_directory(path, &excluded, &mut current_files);
+
                     for (file_path, modified) in &current_files {
                         if !known_files.contains_key(file_path) {
                             let metadata = Self::get_metadata(file_path);
-                            let monitor_event = MonitorEvent::FileEvent {
+                            event_bus.send(MonitorEvent::FileEvent {
                                 path: file_path.to_string_lossy().to_string(),
                                 event_type: EventType::FileCreated,
                                 metadata,
-                            };
-                            event_bus.send(monitor_event);
-                        } else if let Some(old_modified) = known_files.get(file_path) {
-                            if modified > old_modified {
-                                let metadata = Self::get_metadata(file_path);
-                                let monitor_event = MonitorEvent::FileEvent {
-                                    path: file_path.to_string_lossy().to_string(),
-                                    event_type: EventType::FileModified,
-                                    metadata,
-                                };
-                                event_bus.send(monitor_event);
-                            }
+                            });
+                        } else if let Some(old_modified) = known_files.get(file_path)
+                            && modified > old_modified
+                        {
+                            let metadata = Self::get_metadata(file_path);
+                            event_bus.send(MonitorEvent::FileEvent {
+                                path: file_path.to_string_lossy().to_string(),
+                                event_type: EventType::FileModified,
+                                metadata,
+                            });
                         }
                     }
 
-                    // Check for deleted files
-                    for (file_path, _) in &known_files {
+                    for file_path in known_files.keys() {
                         if !current_files.contains_key(file_path) {
                             let metadata = FileMetadata {
                                 size: 0,
@@ -152,12 +245,11 @@ impl FilesystemMonitor {
                                 owner: None,
                                 modified: None,
                             };
-                            let monitor_event = MonitorEvent::FileEvent {
+                            event_bus.send(MonitorEvent::FileEvent {
                                 path: file_path.to_string_lossy().to_string(),
                                 event_type: EventType::FileDeleted,
                                 metadata,
-                            };
-                            event_bus.send(monitor_event);
+                            });
                         }
                     }
 
@@ -172,12 +264,12 @@ impl FilesystemMonitor {
     fn scan_directory(
         path: &Path,
         excluded: &[PathBuf],
-        files: &mut std::collections::HashMap<PathBuf, std::time::SystemTime>,
+        files: &mut HashMap<PathBuf, std::time::SystemTime>,
     ) {
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries.flatten() {
                 let file_path = entry.path();
-                
+
                 if Self::is_excluded(&file_path, excluded) {
                     continue;
                 }
@@ -195,18 +287,6 @@ impl FilesystemMonitor {
         }
     }
 
-    fn is_excluded(path: &Path, excluded: &[PathBuf]) -> bool {
-        let path_str = path.to_string_lossy();
-        for pattern in excluded {
-            if let Some(pattern_str) = pattern.to_str() {
-                if path_str.contains(pattern_str) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     fn get_metadata(path: &Path) -> FileMetadata {
         let mut metadata = FileMetadata {
             size: 0,
@@ -218,17 +298,17 @@ impl FilesystemMonitor {
         if let Ok(meta) = std::fs::metadata(path) {
             metadata.size = meta.len();
             metadata.permissions = format!("{:?}", meta.permissions());
-            
+
             #[cfg(unix)]
             {
                 use std::os::unix::fs::MetadataExt;
                 metadata.owner = Some(format!("uid:{}", meta.uid()));
             }
 
-            if let Ok(modified) = meta.modified() {
-                if let Ok(time) = modified.duration_since(std::time::UNIX_EPOCH) {
-                    metadata.modified = Some(format!("{}", time.as_secs()));
-                }
+            if let Ok(modified) = meta.modified()
+                && let Ok(time) = modified.duration_since(std::time::UNIX_EPOCH)
+            {
+                metadata.modified = Some(format!("{}", time.as_secs()));
             }
         }
 
@@ -236,9 +316,159 @@ impl FilesystemMonitor {
     }
 }
 
+struct InotifyBackend {
+    inotify: Inotify,
+    watch_dirs: HashMap<WatchDescriptor, PathBuf>,
+    excluded: Vec<PathBuf>,
+    watch_budget: usize,
+}
+
+impl InotifyBackend {
+    /// Ajoute un watch sur dir et ses sous-répertoires (hors exclusions).
+    fn add_watch_recursive(&mut self, dir: &Path) {
+        if self.watch_dirs.len() >= self.watch_budget {
+            return;
+        }
+        self.add_watch(dir);
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if self.watch_dirs.len() >= self.watch_budget {
+                    warn!(
+                        "inotify watch budget reached ({}), some subdirectories are not watched",
+                        self.watch_budget
+                    );
+                    return;
+                }
+                let path = entry.path();
+                if FilesystemMonitor::is_excluded(&path, &self.excluded) {
+                    continue;
+                }
+                if path.is_dir() {
+                    self.add_watch_recursive(&path);
+                }
+            }
+        }
+    }
+
+    fn add_watch(&mut self, dir: &Path) {
+        let flags = AddWatchFlags::IN_CREATE
+            | AddWatchFlags::IN_MODIFY
+            | AddWatchFlags::IN_DELETE
+            | AddWatchFlags::IN_MOVED_FROM
+            | AddWatchFlags::IN_MOVED_TO
+            | AddWatchFlags::IN_CLOSE_WRITE;
+        match self.inotify.add_watch(dir, flags) {
+            Ok(wd) => {
+                self.watch_dirs.insert(wd, dir.to_path_buf());
+                debug!("inotify watch added: {}", dir.display());
+            }
+            Err(e) => {
+                debug!("inotify watch failed on {}: {}", dir.display(), e);
+            }
+        }
+    }
+
+    fn run(mut self, event_bus: Arc<EventBus>) {
+        loop {
+            match self.inotify.read_events() {
+                Ok(events) => {
+                    for event in events {
+                        let Some(dir) = self.watch_dirs.get(&event.wd).cloned() else {
+                            continue;
+                        };
+                        let Some(name_os) = event.name else {
+                            continue;
+                        };
+                        let Some(name) = name_os.to_str() else {
+                            continue;
+                        };
+                        let full_path = dir.join(name);
+
+                        if FilesystemMonitor::is_excluded(&full_path, &self.excluded) {
+                            continue;
+                        }
+
+                        let mask = event.mask.bits();
+
+                        // Nouveau répertoire : le surveiller récursivement
+                        if mask & IN_ISDIR != 0
+                            && (mask & IN_CREATE != 0 || mask & IN_MOVED_TO != 0)
+                        {
+                            self.add_watch_recursive(&full_path);
+                            continue;
+                        }
+
+                        let event_type = if mask & IN_CREATE != 0 || mask & IN_MOVED_TO != 0 {
+                            EventType::FileCreated
+                        } else if mask & IN_MODIFY != 0 || mask & IN_CLOSE_WRITE != 0 {
+                            EventType::FileModified
+                        } else if mask & IN_DELETE != 0 || mask & IN_MOVED_FROM != 0 {
+                            EventType::FileDeleted
+                        } else {
+                            continue;
+                        };
+
+                        debug!("fs event {:?}: {}", event_type, full_path.display());
+
+                        event_bus.send(MonitorEvent::FileEvent {
+                            path: full_path.to_string_lossy().to_string(),
+                            event_type,
+                            metadata: FilesystemMonitor::get_metadata(&full_path),
+                        });
+                    }
+                }
+                Err(nix::errno::Errno::EINTR) => continue,
+                Err(e) => {
+                    warn!("inotify read failed ({}), monitor stopped", e);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_wildcard_match() {
+        assert!(FilesystemMonitor::wildcard_match("/home/bob/.cache", "/home/*/.cache"));
+        assert!(!FilesystemMonitor::wildcard_match(
+            "/home/bob/docs",
+            "/home/*/.cache"
+        ));
+        assert!(FilesystemMonitor::wildcard_match(
+            "/home/bob/.cache/opencode/x",
+            "/home/*/.cache/*"
+        ));
+        assert!(FilesystemMonitor::wildcard_match("/a/b/.git", "*/.git"));
+        assert!(FilesystemMonitor::wildcard_match("/a/b/.git/objects", "*/.git/*"));
+    }
+
+    #[test]
+    fn test_exclusion_glob_under_dir() {
+        let excluded = vec![
+            PathBuf::from("/proc"),
+            PathBuf::from("/home/*/.cache"),
+            PathBuf::from("*/node_modules"),
+        ];
+        assert!(FilesystemMonitor::is_excluded(Path::new("/proc/1/cmdline"), &excluded));
+        assert!(FilesystemMonitor::is_excluded(Path::new("/x/proc/y"), &excluded));
+        assert!(FilesystemMonitor::is_excluded(Path::new("/home/alice/.cache"), &excluded));
+        assert!(FilesystemMonitor::is_excluded(
+            Path::new("/home/alice/.cache/opencode/node_modules/foo"),
+            &excluded
+        ));
+        assert!(FilesystemMonitor::is_excluded(
+            Path::new("/srv/app/node_modules/leftpad/index.js"),
+            &excluded
+        ));
+        assert!(!FilesystemMonitor::is_excluded(
+            Path::new("/home/alice/documents/report.txt"),
+            &excluded
+        ));
+    }
 
     #[test]
     fn test_match_component() {
