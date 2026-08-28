@@ -30,8 +30,9 @@ fn main() -> Result<()> {
     loop {
         terminal.draw(|f| ui(f, &mut app))?;
 
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
+        if event::poll(Duration::from_millis(100))?
+            && let Event::Key(key) = event::read()?
+        {
                 match key.code {
                     KeyCode::Char('q') => {
                         app.quit();
@@ -68,9 +69,7 @@ fn main() -> Result<()> {
                     }
                     _ => {}
                 }
-            }
         }
-
         app.poll_scan();
         
         if app.should_quit {
@@ -132,7 +131,8 @@ fn ui(f: &mut Frame, app: &mut App) {
         1 => render_scan(f, app, content_chunks[1]),
         2 => render_quarantine(f, app, content_chunks[1]),
         3 => render_logs(f, app, content_chunks[1]),
-        4 => render_settings(f, app, content_chunks[1]),
+        4 => render_agents(f, app, content_chunks[1]),
+        5 => render_settings(f, app, content_chunks[1]),
         _ => render_dashboard(f, app, content_chunks[1]),
     }
     
@@ -269,6 +269,58 @@ fn render_logs(f: &mut Frame, app: &mut App, area: Rect) {
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title("Logs"));
     f.render_widget(list, area);
+}
+
+fn render_agents(f: &mut Frame, app: &mut App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let online = app.agents.iter().filter(|a| a.status == nkosi_common::types::AgentStatus::Online).count();
+    let offline = app.agents.len() - online;
+    let stats_text = format!(
+        "Agents:\n  Total: {} | En ligne: {} | Hors ligne: {} | Alertes actives: {}",
+        app.agents.len(), online, offline, app.alerts_count
+    );
+    let stats = Paragraph::new(stats_text)
+        .style(Style::default().fg(Color::White))
+        .block(Block::default().borders(Borders::ALL).title("Statistiques Agents"));
+    f.render_widget(stats, chunks[0]);
+
+    let items: Vec<ListItem> = app.agents.iter().map(|agent| {
+        let status_color = match agent.status {
+            nkosi_common::types::AgentStatus::Online => Color::Green,
+            nkosi_common::types::AgentStatus::Degraded => Color::Yellow,
+            nkosi_common::types::AgentStatus::Offline => Color::Red,
+        };
+        let status_label = match agent.status {
+            nkosi_common::types::AgentStatus::Online => "● En ligne",
+            nkosi_common::types::AgentStatus::Degraded => "◐ Dégradé",
+            nkosi_common::types::AgentStatus::Offline => "○ Hors ligne",
+        };
+        ListItem::new(Line::from(vec![
+            Span::styled(
+                format!("[{}] ", status_label),
+                Style::default().fg(status_color)
+            ),
+            Span::styled(
+                format!("{} ({})", agent.hostname, agent.ip_address),
+                Style::default().fg(Color::White)
+            ),
+            Span::styled(
+                format!(" — Score: {}", agent.score),
+                Style::default().fg(Color::Gray)
+            ),
+        ]))
+    }).collect();
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("Agents"));
+    f.render_widget(list, chunks[1]);
 }
 
 fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {

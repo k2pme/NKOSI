@@ -19,7 +19,9 @@ COPY . .
 # Build release
 RUN cargo build --release --bin nkosi-agent && \
     cargo build --release --bin nkosi-cli && \
-    cargo build --release --bin nkosi-api
+    cargo build --release --bin nkosi-api && \
+    cargo build --release --bin nkosi-central && \
+    cargo build --release --bin nkosi-console
 
 # Runtime image
 FROM debian:bookworm-slim
@@ -37,6 +39,9 @@ RUN useradd -r -s /bin/false nkosi
 COPY --from=builder /app/target/release/nkosi-agent /usr/local/bin/
 COPY --from=builder /app/target/release/nkosi-cli /usr/local/bin/
 COPY --from=builder /app/target/release/nkosi-api /usr/local/bin/
+COPY --from=builder /app/target/release/nkosi-central /usr/local/bin/
+COPY --from=builder /app/target/release/nkosi-console /usr/local/bin/
+COPY --from=builder /app/nkosi-console/dashboard /usr/local/share/nkosi-console
 
 # Copy config and service files
 COPY config/nkosi.toml /etc/nkosi/nkosi.toml
@@ -49,9 +54,9 @@ RUN mkdir -p /var/lib/nkosi /var/log/nkosi /var/backup/nkosi && \
 # Expose API port
 EXPOSE 8080
 
-# Health check
+# Health check - verify agent wrote health file
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/api/status || exit 1
+    CMD test -f /run/nkosi/health.json || exit 1
 
 # Run as nkosi user
 USER nkosi

@@ -1,398 +1,247 @@
-# Plan d'exécution — NKOSI Antivirus Linux V1
+# Plan d'exécution — Améliorations NKOSI
 
 ## Vue d'ensemble
 
-| Élément | Valeur |
-|---------|--------|
-| **Durée estimée** | 20 semaines |
-| **Stack principal** | Rust + SQLite + fanotify + YARA |
-| **Cible** | Debian/Ubuntu x86-64 |
-| **Approche** | Itérative, incréments fonctionnels |
+| Phase | Priorité | Estimée | Items |
+|-------|----------|---------|-------|
+| 1 | P0 Sécurité critique | 2-3h | 3 items |
+| 2 | P1 Qualité + Performance | 4-5h | 7 items |
+| 3 | P2 Déploiement + Tests | 3-4h | 5 items |
+| 4 | P3 Tests avancés | 2-3h | 3 items |
+| **Total** | | **11-15h** | **18 items** |
 
 ---
 
-## Phase 1 — Fondations (Semaines 1-3)
+## Phase 1 — Sécurité critique (P0)
 
-### Objectif
-Mettre en place l'architecture de base, la configuration et la persistance.
+> Blocage : impossible à déployer en prod sans ça.
 
-### Livrables
+### 1.1 Refuser démarrage sans API key explicite
+- **Fichier:** `nkosi-api/src/main.rs`
+- **Action:** Si `NKOSI_API_KEYS` n'est pas défini ou vaut la valeur par défaut, `panic!()` au démarrage avec message explicite.
+- **Effet:** Force l'opérateur à configurer une vraie clé.
+- **Risque:** Casser le cas d'usage dev local → ajouter un flag `--allow-default-key` ou variable `NKOSI_ALLOW_DEFAULT_KEY=1`.
 
-| # | Tâche | Priorité | Durée |
-|---|-------|----------|-------|
-| 1.1 | Créer le workspace Cargo multi-crates | Haute | 1j |
-| 1.2 | Définir les types partagés (Event, ThreatIndicator, Detection, QuarantineItem, Scan) | Haute | 2j |
-| 1.3 | Schéma SQLite + couche d'accès (CRUD) | Haute | 3j |
-| 1.4 | Système de configuration TOML (seuils, chemins, exclusions) | Haute | 2j |
-| 1.5 | Logging structuré `tracing` + rotation logs | Haute | 1j |
-| 1.6 | Script d'installation systemd (service daemon) | Haute | 1j |
-| 1.7 | Tests unitaires sur DB et config | Haute | 2j |
+### 1.2 Gérer erreurs BDD sans unwrap
+- **Fichier:** `nkosi-db/src/repositories.rs`
+- **Action:** Remplacer les `.unwrap()` sur `Uuid::parse_str` et `DateTime::parse_from_rfc3339` par `unwrap_or_else(|_| Uuid::new_v4())` ou propagation d'erreur `?`.
+- **Lignes concernées:** 39, 74, 115, 157, 813 (EventRepository), 405 (ThreatIndicatorRepository).
+- **Effet:** Une corruption BDD ne crash plus le service.
 
-### Structure finale Phase 1
-
-```
-nkosi/
-├── Cargo.toml
-├── nkosi-common/         # types, config, erreurs
-├── nkosi-db/             # SQLite, migrations, repositories
-├── nkosi-agent/          # daemon entry point
-└── config/
-    └── nkosi.toml        # configuration par défaut
-```
-
-### Critère de validation
-- Le daemon démarre, charge la config, initialise la DB, puis attend des événements.
+### 1.3 Sécuriser le fichier health
+- **Fichier:** `nkosi-agent/src/main.rs`
+- **Action:** Écrire dans `/run/nkosi/health.json` (dossier systemd RuntimeDirectory) au lieu de `/tmp/`. Ajouter `RuntimeDirectory=nkosi` dans le service systemd.
+- **Alternative:** `XDG_RUNTIME_DIR` si disponible.
+- **Effet:** Permissions restreintes (0700), inaccessible aux autres utilisateurs.
 
 ---
 
-## Phase 2 — Moniteurs système (Semaines 4-6)
+## Phase 2 — Qualité + Performance (P1)
 
-### Objectif
-Capturer les événements filesystem, processus et réseau en temps réel.
+> Améliore la maintenabilité et les performances sans casser l'API.
 
-### Livrables
+### 2.1 Dédupliquer load_config / init_database
+- **Action:** Créer `nkosi-common/src/utils.rs` avec `pub fn load_config()` et `pub fn init_database()`.
+- **Fichiers:** `nkosi-agent/src/main.rs`, `nkosi-cli/src/main.rs`, `nkosi-ui/src/app.rs`.
+- **Effet:** ~50 lignes supprimées de chaque main.rs.
 
-| # | Tâche | Priorité | Durée |
-|---|-------|----------|-------|
-| 2.1 | Filesystem Monitor — fanotify bindings FFI | Haute | 4j |
-| 2.2 | Filesystem Monitor — collecte métadonnées (path, taille, propriétaire, perms) | Haute | 2j |
-| 2.3 | Filesystem Monitor — bus d'événements internes | Haute | 1j |
-| 2.4 | Process Monitor — lecture /proc + netlink connector fork/exit | Haute | 4j |
-| 2.5 | Process Monitor — mapping PID → executable, args, PPID, user | Haute | 2j |
-| 2.6 | Network Monitor — netlink conntrack ou /proc/net/tcp polling | Haute | 4j |
-| 2.7 | Network Monitor — association PID ↔ connexion (IP, port, protocole) | Haute | 2j |
-| 2.8 | Intégration des 3 moniteurs dans le daemon | Haute | 2j |
-| 2.9 | Tests d'intégration moniteurs → event bus | Haute | 2j |
+### 2.2 Séparer nkosi-cli en modules
+- **Action:** Créer `nkosi-cli/src/commands/` :
+  - `status.rs` — commande `status`
+  - `scan.rs` — commande `scan`
+  - `quarantine.rs` — commande `quarantine`
+  - `report.rs` — commande `report`
+  - `config.rs` — commande `config`
+- **Effet:** `main.rs` passe de 1236 à ~100 lignes (dispatch seul).
 
-### Architecture Phase 2
+### 2.3 Séparer nkosi-api en modules
+- **Action:** Créer `nkosi-api/src/handlers/` :
+  - `status.rs` — `/api/status`
+  - `events.rs` — `/api/events*`
+  - `agents.rs` — `/api/agents*`
+  - `quarantine.rs` — `/api/quarantine`
+  - `firewall.rs` — `/api/firewall`
+  - `scan.rs` — `/api/scan`
+- **Effet:** `main.rs` passe de 665+ à ~150 lignes.
 
-```
-┌─────────────────────────────────────┐
-│           Security Agent            │
-│         (tokio async runtime)       │
-├──────────┬──────────┬───────────────┤
-│ Filesys  │ Process  │   Network     │
-│ Monitor  │ Monitor  │   Monitor     │
-│ fanotify │ /proc    │   netlink     │
-└────┬─────┴────┬─────┴──────┬────────┘
-     │          │             │
-     └──────────┴─────────────┘
-                │
-          Event Bus (tokio::mpsc)
-                │
-         ┌──────┴──────┐
-         │  Event DB   │
-         └─────────────┘
-```
+### 2.4 Cache LRU pour les hashes
+- **Fichier:** `nkosi-engines/src/hash_engine.rs`
+- **Action:** Ajouter `lru` crate,缓存 les 10000 derniers SHA-256 calculés (path → hash).
+- **Dépendance:** Ajouter `lru = "0.12"` dans `Cargo.toml`.
+- **Effet:** Évite de re-hasher les fichiers déjà traités.
 
-### Critère de validation
-- Un fichier créé/modify dans une zone surveillée génère un event en DB.
-- Un processus forké est capturé avec son PID, PPID, executable.
-- Une connexion sortante est associée au bon PID.
+### 2.5 Corriger le fallback polling (exclusions)
+- **Fichier:** `nkosi-monitors/src/filesystem.rs:192`
+- **Action:** Transmettre `config.monitors.excluded_paths` au fallback polling au lieu de `Vec::new()`.
+- **Effet:** `/proc`, `/sys`, etc. ne sont plus surveillés en polling.
 
----
+### 2.6 Réduire fréquence scan processus
+- **Fichier:** `nkosi-monitors/src/process.rs:128`
+- **Action:** Passer l'intervalle de 500ms à 2000ms (configurable via `config.monitors.process_scan_interval_ms`).
+- **Effet:** Réduit la charge CPU de ~75%.
 
-## Phase 3 — Moteurs de détection (Semaines 7-10)
-
-### Objectif
-Analyser chaque événement pour extraire des signaux de détection.
-
-### Livrables
-
-| # | Tâche | Priorité | Durée |
-|---|-------|----------|-------|
-| 3.1 | Hash Engine — calcul SHA-256 streaming (pas de charge mémoire) | Haute | 2j |
-| 3.2 | Hash Engine — comparaison vs Threat DB locale | Haute | 1j |
-| 3.3 | YARA Engine — binding crate `yara` / compilation rules | Haute | 3j |
-| 3.4 | YARA Engine — scan fichier, extraction metadata règle (family, severity) | Haute | 2j |
-| 3.5 | Static Analyzer — identification type (ELF, script, archive) via `file` magic | Haute | 1j |
-| 3.6 | Static Analyzer — ELF : sections, imports, SUID, strings, URLs/IPs | Haute | 3j |
-| 3.7 | Static Analyzer — Scripts : commandes shell, obfuscation basique | Haute | 2j |
-| 3.8 | Behavior Engine — fenêtre temporelle d'événements par PID | Haute | 3j |
-| 3.9 | Behavior Engine — règles de corrélation (accès SSH, chiffrement, exfil) | Haute | 3j |
-| 3.10 | Tests avec fichiers EICAR + règles YARA test | Haute | 2j |
-
-### Architecture Phase 3
-
-```
-Event Bus
-    │
-    ├──► Hash Engine ──────┐
-    │                      │
-    ├──► YARA Engine ──────┤
-    │                      │
-    ├──► Static Analyzer ──┼──► Detection Objects
-    │                      │        │
-    └──► Behavior Engine ──┘        │
-                                   ▼
-                            Risk Engine (Phase 4)
-```
-
-### Critère de validation
-- Fichier EICAR → Hash connu → détection malware.
-- Règle YARA test → match détecté avec family/severity.
-- Binaire ELF avec SUID → signal static analyzer.
-- Chaîne comportementale suspecte → score élevé behavior engine.
+### 2.7 Mutex empoisonné → logging
+- **Fichier:** `nkosi-monitors/src/process.rs:70`
+- **Action:** Remplacer `unwrap_or_else(|e| e.into_inner())` par :
+  ```rust
+  match self.processes.lock() {
+      Ok(guard) => guard,
+      Err(e) => {
+          tracing::error!("Mutex empoisonné, récupération: {}", e);
+          e.into_inner()
+      }
+  }
+  ```
+- **Effet:** L'empoisonnement est loggé au lieu d'être silencieux.
 
 ---
 
-## Phase 4 — Core décisionnel (Semaines 11-12)
+## Phase 3 — Déploiement + Tests (P2)
 
-### Objectif
-Centraliser les décisions et exécuter les réponses.
+> Prépare le déploiement production et renforce la fiabilité.
 
-### Livrables
+### 3.1 Nettoyer .gitignore
+- **Fichier:** `.gitignore`
+- **Action:** Ajouter :
+  ```
+  target/
+  *.db
+  data/
+  .kilo/
+  *.tar.gz
+  protoc-*.zip
+  /tmp/
+  ```
+- **Effet:** Les artefacts build et fichiers temporaires ne sont plus trackés.
 
-| # | Tâche | Priorité | Durée |
-|---|-------|----------|-------|
-| 4.1 | Risk Engine — pondération configurable par source | Haute | 3j |
-| 4.2 | Risk Engine — normalisation score 0-100 + seuils LOW/SUSPECT/MALICIOUS | Haute | 2j |
-| 4.3 | Response Engine — autoriser, alerter | Haute | 1j |
-| 4.4 | Response Engine — kill processus (SIGKILL via kill(2)) | Haute | 1j |
-| 4.5 | Response Engine — quarantaine (déplacement + chmod 000 + rename) | Haute | 2j |
-| 4.6 | Response Engine — restauration depuis quarantaine | Haute | 1j |
-| 4.7 | Response Engine — suppression explicite depuis quarantaine | Haute | 1j |
-| 4.8 | Response Engine — blocage connexion (netlink) quand supporté | Moyenne | 2j |
-| 4.9 | Intégration Event → Detection → Risk → Response | Haute | 2j |
-| 4.10 | Tests end-to-end avec scénarios complets | Haute | 2j |
+### 3.2 Ajouter limites systemd
+- **Fichier:** `config/nkosi-agent.service`
+- **Action:** Ajouter :
+  ```ini
+  MemoryMax=512M
+  CPUQuota=50%
+  LimitNOFILE=65536
+  LimitNPROC=512
+  PrivateTmp=true
+  ProtectSystem=strict
+  ProtectHome=true
+  NoNewPrivileges=true
+  ```
+- **Effet:** Le daemon ne peut pas consommer plus que prévu.
 
-### Architecture Phase 4
+### 3.3 Limiter Docker capabilities
+- **Fichier:** `docker-compose.yml`
+- **Action:** Remplacer `privileged: true` par :
+  ```yaml
+  cap_add:
+    - NET_ADMIN
+    - SYS_PTRACE
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  ```
+- **Effet:** Réduit la surface d'attaque container.
 
-```
-Detections (Hash/YARA/Static/Behavior)
-            │
-            ▼
-      ┌─────────────┐
-      │ Risk Engine  │
-      │ (0-100)      │
-      └──────┬──────┘
-             │
-    ┌────────┼────────────┐
-    ▼        ▼            ▼
-  0-29     30-69        70-100
-   LOW    SUSPECT      MALICIOUS
-    │        │            │
-  Allow    Alert    Quarantine + Kill
-```
+### 3.4 Corriger health check Docker
+- **Fichier:** `Dockerfile:53`
+- **Action:** Si ENTRYPOINT = nkosi-agent, le health check doit cibler l'agent :
+  ```dockerfile
+  HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD test -f /run/nkosi/health.json || exit 1
+  ```
+- **Effet:** Le health check vérifie le bon processus.
 
-### Critère de validation
-- Score calculé correctement pour chaque combinaison de signaux.
-- Processus tué uniquement quand score ≥ 70.
-- Fichier en quarantaine inaccessible (permissions 000).
-- Restauration fonctionne avec avertissement loggé.
-
----
-
-## Phase 5 — Threat Intelligence (Semaines 13-14)
-
-### Objectif
-Alimenter la base locale depuis des sources publiques.
-
-### Livrables
-
-| # | Tâche | Priorité | Durée |
-|---|-------|----------|-------|
-| 5.1 | Client MalwareBazaar (hashes SHA-256, family, tags) | Haute | 2j |
-| 5.2 | Client ThreatFox (IOC IP, domain, URL) | Haute | 2j |
-| 5.3 | Client URLhaus (URLs malveillantes) | Haute | 1j |
-| 5.4 | Normalisation + upsert SQLite (déduplication) | Haute | 2j |
-| 5.5 | Update Service — vérification version, download, intégrité | Haute | 2j |
-| 5.6 | Update Service — scheduled task (systemd timer ou cron) | Haute | 1j |
-| 5.7 | Fallback — conserver dernière base valide si update échoue | Haute | 1j |
-| 5.8 | Tests — simulation update, corruption, fallback | Haute | 1j |
-
-### Flux Phase 5
-
-```
-Internet
-    │
-    ├── MalwareBazaar ──┐
-    ├── ThreatFox ──────┼──► Update Service
-    └── URLhaus ────────┘         │
-                                  ▼
-                            Normalize + Verify
-                                  │
-                                  ▼
-                            Threat DB Locale
-                                  │
-                                  ▼
-                            Detection Engines
-```
-
-### Critère de validation
-- Update télécharge et insère les IOC en DB.
-- DB locale contient hashes + IP + domaines.
-- Pas de consultation Internet par fichier analysé.
-- Update échouée → dernière base conservée.
+### 3.5 Uniformiser la langue
+- **Fichiers:** `nkosi-cli/src/main.rs:590,621` et autres.
+- **Action:** Remplacer les caractères chinois (`不存在`, `尚未配置`) par leurs équivalents français (`introuvable`, `non configuré`).
+- **Effet:** UI cohérente en français.
 
 ---
 
-## Phase 6 — Interface (Semaines 15-17)
+## Phase 4 — Tests avancés (P3)
 
-### Objectif
-CLI complète + interface desktop/TUI pour l'utilisateur.
+> Renforce la fiabilité à long terme.
 
-### Livrables
+### 4.1 Tests monitors
+- **Fichier:** `tests/src/integration/monitor_test.rs` (nouveau)
+- **Tests:**
+  - `test_filesystem_monitor_create_event` — Crée un fichier, vérifie l'événement
+  - `test_process_monitor_detect_new` — Lance un processus, vérifie la détection
+  - `test_network_monitor_cache` — Teste le cache et le TTL
 
-| # | Tâche | Priorité | Durée |
-|---|-------|----------|-------|
-| 6.1 | CLI scan — fichier, dossier, rapide, complet | Haute | 3j |
-| 6.2 | CLI quarantine — list, restore, delete | Haute | 2j |
-| 6.3 | CLI status — état agent, modules, DB, stats | Haute | 1j |
-| 6.4 | CLI logs — affichage incidents récents | Haute | 1j |
-| 6.5 | IPC agent↔CLI (Unix socket) | Haute | 2j |
-| 6.6 | Desktop UI — dashboard état protection (GTK4 ou TUI) | Haute | 4j |
-| 6.7 | Desktop UI — liste incidents avec drill-down | Haute | 3j |
-| 6.8 | Desktop UI — boutons scan rapide/complet | Haute | 1j |
-| 6.9 | Desktop UI — gestion quarantaine | Haute | 2j |
-| 6.10 | Notification desktop (libnotify ou DBus) | Moyenne | 1j |
+### 4.2 Tests engines (fuzzing)
+- **Fichier:** `tests/src/integration/engine_fuzz_test.rs` (nouveau)
+- **Tests:**
+  - `test_yara_fuzz_random_bytes` — 1000 buffers aléatoires → pas de panic
+  - `test_hash_fuzz_empty_files` — Fichiers vides, très gros, symliques
+  - `test_static_analyzer_fuzz` — Binaires corrompus, ELF malformés
+- **Dépendance:** Ajouter `proptest` ou `bolero` dans les dev-dependencies.
 
-### Maquette CLI
+### 4.3 Tests API (end-to-end HTTP)
+- **Fichier:** `tests/src/integration/api_test.rs` (nouveau)
+- **Tests:**
+  - `test_api_status_endpoint` — GET /api/status → 200
+  - `test_api_auth_required` — Sans X-API-Key → 401
+  - `test_api_rate_limit` — 100 requêtes rapides → 429
+  - `test_api_agents_endpoint` — GET /api/agents → 200
+  - `test_api_consolidated_report` — GET /api/report/consolidated → 200
+- **Dépendance:** `actix-rt` + `awc` (actix web client) dans les dev-dependencies.
+
+---
+
+## Exécution recommandée
+
+```
+Sprint 1 (2-3h) : Phase 1 — Sécurité critique
+  → 1.1 API key     → 1.2 BDD unwrap     → 1.3 Health file
+
+Sprint 2 (4-5h) : Phase 2 — Qualité + Performance
+  → 2.1 Dédup code  → 2.2 CLI modules    → 2.3 API modules
+  → 2.4 Cache LRU   → 2.5 Polling fix    → 2.6 Process interval
+  → 2.7 Mutex log
+
+Sprint 3 (3-4h) : Phase 3 — Déploiement + Tests
+  → 3.1 gitignore   → 3.2 systemd        → 3.3 Docker caps
+  → 3.4 Health check → 3.5 Langue
+
+Sprint 4 (2-3h) : Phase 4 — Tests avancés
+  → 4.1 Monitors    → 4.2 Fuzzing        → 4.3 API tests
+```
+
+---
+
+## Critères de validation
+
+Après chaque sprint, vérifier :
 
 ```bash
-nkosi status                    # état protection
-nkosi scan file /path/to/file   # scan fichier
-nkosi scan dir /home            # scan dossier
-nkosi scan quick                # scan rapide
-nkosi scan full                 # scan complet
-nkosi quarantine list           # liste quarantaine
-nkosi quarantine restore <id>   # restauration
-nkosi quarantine delete <id>    # suppression définitive
-nkosi logs --last 50            # 50 derniers événements
-nkosi update                    # mise à jour TI
+# Compilation
+cargo build --workspace
+
+# Pas de warnings
+cargo clippy --workspace -- -D warnings
+
+# Tous les tests passent
+cargo test --workspace
+
+# Formatage
+cargo fmt --check
 ```
 
-### Critère de validation
-- CLI fonctionne sans UI graphique.
-- UI affiche l'état en temps réel.
-- Un scan via CLI produit un rapport structuré.
-- Notification déclenchée sur détection.
-
----
-
-## Phase 7 — Intégration & Qualité (Semaines 18-20)
-
-### Objectif
-Stabiliser, tester, documenter et préparer le déploiement.
-
-### Livrables
-
-| # | Tâche | Priorité | Durée |
-|---|-------|----------|-------|
-| 7.1 | Tests unitaires complets (couverture > 80%) | Haute | 3j |
-| 7.2 | Tests d'intégration pipeline complet | Haute | 2j |
-| 7.3 | Tests fonctionnels (EICAR, YARA test, IOC factices) | Haute | 2j |
-| 7.4 | Benchmarks performance (CPU, mémoire, I/O) | Haute | 2j |
-| 7.5 | Optimisation cache (fichiers inchangés) | Haute | 2j |
-| 7.6 | Gestion erreurs — protection dégradée visible | Haute | 2j |
-| 7.7 | Packaging — package .deb | Haute | 2j |
-| 7.8 | Script install + systemd service | Haute | 1j |
-| 7.9 | Documentation technique (architecture, API interne) | Haute | 2j |
-| 7.10 | Validation critères d'acceptation V1 | Haute | 2j |
-
-### Critères d'acceptation V1
-
-| # | Critère |
-|---|---------|
-| AC-01 | L'agent démarre automatiquement sur Debian/Ubuntu |
-| AC-02 | Protection temps réel détecte un nouveau fichier |
-| AC-03 | SHA-256 comparé à la base locale |
-| AC-04 | Règle YARA produit une détection visible |
-| AC-05 | Fichier analysé statiquement |
-| AC-06 | Processus et PPID observables |
-| AC-07 | Connexion réseau associée au processus |
-| AC-08 | Signaux corrélés dans un même incident |
-| AC-09 | Score de risque calculé |
-| AC-10 | Processus tué sur décision du moteur |
-| AC-11 | Fichier en quarantaine puis restauré |
-| AC-12 | Incidents enregistrés localement |
-| AC-13 | Scan manuel produit un rapport |
-| AC-14 | Base TI mise à jour sans consultation distante par fichier |
-| AC-15 | Interface affiche l'état de protection |
-| AC-16 | Détection expliquée par signaux et actions |
-
----
-
-## Matrice de dépendances
-
-```
-Phase 1 (Fondations)
-    │
-    ├──► Phase 2 (Moniteurs)
-    │        │
-    │        └──► Phase 3 (Détection)
-    │                 │
-    │                 └──► Phase 4 (Risk/Response)
-    │                          │
-    │                          └──► Phase 6 (UI/CLI)
-    │
-    └──► Phase 5 (Threat Intelligence)
-                    │
-                    └──► Phase 4 (alimente les moteurs)
-                                 │
-                                 └──► Phase 7 (Qualité)
-```
-
----
-
-## Gestion des risques
-
-| Risque | Impact | Mitigation |
-|--------|--------|------------|
-| fanotify nécessite root | Élevé | Capabilities Linux, pas de SUID permanent |
-| YARA binding complexe | Moyen | Wrapper C minimal, tests progressifs |
-| Performance I/O scan complet | Moyen | Cache SHA-256, parallelisme tokio |
-| DB SQLite concurrence | Moyen | WAL mode, connection pool |
-| Sources TI indisponibles | Faible | Fallback dernière base valide |
-
----
-
-## Commandes de démarrage
+Pour Sprint 3, vérifier en plus :
 
 ```bash
-# Initialiser le workspace
-cargo init nkosi --name nkosi
-cd nkosi
+# Docker build
+docker build -t nkosi:test .
 
-# Créer les crates
-cargo new nkosi-common --lib
-cargo new nkosi-db --lib
-cargo new nkosi-agent --bin
-cargo new nkosi-monitors --lib
-cargo new nkosi-engines --lib
-cargo new nkosi-risk --lib
-cargo new nkosi-response --lib
-cargo new nkosi-ti --lib
-cargo new nkosi-cli --bin
-cargo new nkosi-ui --bin
-
-# Dépendances de base
-cargo add tokio --features full
-cargo add serde serde_json --features derive
-cargo add rusqlite --features bundled
-cargo add sha2
-cargo add clap --features derive
-cargo add tracing tracing-subscriber
-cargo add toml
-cargo add thiserror anyhow
-cargo add yara
-cargo add goblin
+# Systemd validation
+systemd-analyze verify config/nkosi-agent.service
 ```
 
----
+Pour Sprint 4, vérifier en plus :
 
-## Calendrier synthétique
-
+```bash
+# Couverture (si cargo-tarpaulin installé)
+cargo tarpaulin --workspace --out Html
 ```
-Sem 1-3   ████ Phase 1 : Fondations
-Sem 4-6   ████ Phase 2 : Moniteurs
-Sem 7-10  ██████ Phase 3 : Détection
-Sem 11-12 ███ Phase 4 : Risk/Response
-Sem 13-14 ███ Phase 5 : Threat Intelligence
-Sem 15-17 ████ Phase 6 : UI/CLI
-Sem 18-20 ████ Phase 7 : Qualité
-```
-
----
-
-*Document généré — NKOSI V1*

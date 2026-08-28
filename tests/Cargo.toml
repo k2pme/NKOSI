@@ -1,21 +1,19 @@
 [package]
-name = "nkosi-ui"
+name = "nkosi-integration-tests"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 nkosi-common = { path = "../nkosi-common" }
-nkosi-core = { path = "../nkosi-core" }
 nkosi-db = { path = "../nkosi-db" }
 nkosi-engines = { path = "../nkosi-engines" }
 nkosi-risk = { path = "../nkosi-risk" }
 nkosi-response = { path = "../nkosi-response" }
+nkosi-scanner = { path = "../nkosi-scanner" }
 nkosi-ti = { path = "../nkosi-ti" }
+nkosi-monitors = { path = "../nkosi-monitors" }
 tokio.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-anyhow.workspace = true
-ratatui = "0.29"
-crossterm = "0.28"
+tempfile.workspace = true
+uuid.workspace = true
 chrono.workspace = true
-walkdir = "2"
+serde_json.workspace = true

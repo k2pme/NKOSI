@@ -1,6 +1,7 @@
 use anyhow::Result;
 use nkosi_common::config::NkosiConfig;
 use nkosi_common::types::*;
+use nkosi_core::{load_config, init_database};
 use nkosi_db::Database;
 use nkosi_engines::{HashEngine, StaticAnalyzer, YaraEngine};
 use nkosi_risk::{RiskConfig, RiskEngine};
@@ -23,6 +24,8 @@ pub struct App {
     pub quarantine_items: Vec<QuarantineItem>,
     pub logs: Vec<Event>,
     pub config: NkosiConfig,
+    pub agents: Vec<nkosi_common::types::Agent>,
+    pub alerts_count: usize,
     db: Database,
 }
 
@@ -53,6 +56,7 @@ impl App {
                 "Scan".to_string(),
                 "Quarantine".to_string(),
                 "Logs".to_string(),
+                "Agents".to_string(),
                 "Paramètres".to_string(),
             ],
             stats: Stats::default(),
@@ -64,6 +68,8 @@ impl App {
             scan_rx: None,
             quarantine_items: Vec::new(),
             logs: Vec::new(),
+            agents: Vec::new(),
+            alerts_count: 0,
             config: config.clone(),
             db,
         };
@@ -105,6 +111,7 @@ impl App {
         self.update_events()?;
         self.update_quarantine()?;
         self.update_logs()?;
+        self.update_agents()?;
         Ok(())
     }
 
@@ -201,6 +208,17 @@ impl App {
         self.logs = event_repo.get_recent(100)?;
         Ok(())
     }
+
+    fn update_agents(&mut self) -> Result<()> {
+        let agent_repo = nkosi_db::AgentRepository::new(&self.db);
+        self.agents = agent_repo.get_all()?;
+        let event_repo = nkosi_db::EventRepository::new(&self.db);
+        let events = event_repo.get_recent(500)?;
+        self.alerts_count = events.iter()
+            .filter(|e| matches!(e.severity, Severity::Critical | Severity::High | Severity::Medium))
+            .count();
+        Ok(())
+    }
 }
 
 fn run_scan(path: String, tx: Sender<String>) {
@@ -232,7 +250,7 @@ fn run_scan(path: String, tx: Sender<String>) {
     }
 
     let _ = tx.send(String::new());
-    let _ = tx.send(format!("Scan terminé:"));
+    let _ = tx.send("Scan terminé:".to_string());
     let _ = tx.send(format!("  • Fichiers scannés: {}", scanned_files));
     let _ = tx.send(format!("  • Menaces détectées: {}", detected_threats));
     let _ = tx.send(SCAN_DONE.to_string());
@@ -256,36 +274,4 @@ fn scan_file(
     static_analyzer.analyze_file(path)
 }
 
-fn load_config() -> Result<NkosiConfig> {
-    let config_path = "/etc/nkosi/nkosi.toml";
-    if Path::new(config_path).exists() {
-        Ok(NkosiConfig::load(config_path)?)
-    } else {
-        let local_config = "config/nkosi.toml";
-        if Path::new(local_config).exists() {
-            Ok(NkosiConfig::load(local_config)?)
-        } else {
-            Ok(NkosiConfig::default())
-        }
-    }
-}
 
-fn init_database(config: &NkosiConfig) -> Result<Database> {
-    let db_path = &config.agent.db_path;
-
-    if let Some(parent) = db_path.parent() {
-        if parent.exists() {
-            if std::fs::create_dir_all(parent).is_ok() {
-                if let Ok(db) = Database::new(db_path) {
-                    return Ok(db);
-                }
-            }
-        }
-    }
-
-    let local_path = std::env::current_dir()?.join("data").join("nkosi.db");
-    if let Some(parent) = local_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    Ok(Database::new(&local_path)?)
-}

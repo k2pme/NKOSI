@@ -4,3 +4,6 @@
 *.db
 *.deb
 protoc-*.zip
+.kilo/
+*.tar.gz
+/tmp/

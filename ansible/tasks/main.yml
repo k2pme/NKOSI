@@ -62,6 +62,8 @@
     - agent
     - cli
     - api
+    - central
+    - console
 
 - name: Install configuration
   template:

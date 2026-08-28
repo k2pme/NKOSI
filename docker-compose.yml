@@ -8,7 +8,13 @@ services:
       dockerfile: Dockerfile
     container_name: nkosi-agent
     restart: unless-stopped
-    privileged: true  # Required for iptables and /proc access
+    cap_add:
+      - NET_ADMIN
+      - SYS_PTRACE
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./config/nkosi.toml:/etc/nkosi/nkosi.toml:ro
       - nkosi-data:/var/lib/nkosi
@@ -31,14 +37,32 @@ services:
       dockerfile: Dockerfile
     container_name: nkosi-central
     restart: unless-stopped
-    command: ["nkosi-api"]
+    command: ["nkosi-central"]
     volumes:
       - ./config/nkosi.toml:/etc/nkosi/nkosi.toml:ro
       - nkosi-central-data:/var/lib/nkosi
     environment:
       - RUST_LOG=info
     ports:
-      - "8443:8080"
+      - "50051:50051"
+    networks:
+      - nkosi-net
+
+  # NKOSI Centralized Console (multi-server web dashboard, F2.11)
+  nkosi-console:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nkosi-console
+    restart: unless-stopped
+    command: ["nkosi-console", "--central-addr", "nkosi-central:50051", "--bind", "0.0.0.0:9090", "--dashboard-dir", "/usr/local/share/nkosi-console"]
+    environment:
+      - RUST_LOG=info
+      - NKOSI_CENTRAL_ADDR=nkosi-central:50051
+    depends_on:
+      - nkosi-central
+    ports:
+      - "9090:9090"
     networks:
       - nkosi-net
 

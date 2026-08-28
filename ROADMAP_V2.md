@@ -111,12 +111,15 @@
 - **Crate** : `nkosi-central` (tonic gRPC)
 
 ### F2.11 — Console centralisée
-- [ ] Vue multi-servers
-- [ ] Filtrage par host
-- [ ] Alertes agrégées
-- [ ] Rapport consolidé
-- **Statut** : ⏳ Pas commencé
-- **Tests** : —
+- [x] Vue multi-servers
+- [x] Filtrage par host
+- [x] Alertes agrégées
+- [x] Rapport consolidé
+- **Statut** : ✅ Terminé
+- **Crate** : `nkosi-console` (serveur actix-web client gRPC du `nkosi-central`)
+- **Dashboard** : `nkosi-console/dashboard/index.html` (accès `http://localhost:9090/`)
+- **Endpoints** : `/console/agents`, `/console/events`, `/console/alerts`, `/console/stats`, `/console/report`, `/console/connectivity`
+- **Déploiement** : `docker-compose` + `config/nkosi-console.service`
 
 ---
 
@@ -195,8 +198,8 @@
 | P0 — Critique | F2.01-F2.04 | 4 | 4 |
 | P1 — Pare-feu | F2.05-F2.07 | 3 | 3 |
 | P2 — Web | F2.08-F2.09 | 2 | 2 |
-| P3 — Multi | F2.10-F2.11 | 2 | 1 |
+| P3 — Multi | F2.10-F2.11 | 2 | 2 |
 | P4 — Ops | F2.12-F2.15 | 4 | 4 |
 | P5 — Package | F2.16-F2.18 | 3 | 3 |
 | **Bonus** | Man/Completions | 1 | 1 |
-| **Total** | | **19** | **18** |
+| **Total** | | **19** | **19** |

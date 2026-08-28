@@ -13,7 +13,14 @@ watched_paths = [
     "/root/.config/autostart",
     "/home/*/.config/autostart",
 ]
-excluded_paths = ["/home/*/.cache", "/proc", "/sys"]
+excluded_paths = [
+    "/proc", "/sys", "/run",
+    "/home/*/.cache",
+    "*/.git",
+    "*/node_modules",
+    "*/target",
+    "/var/lib/docker",
+]
 process_monitor_enabled = true
 network_monitor_enabled = true
 
