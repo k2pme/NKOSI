@@ -80,10 +80,13 @@ pub struct Event {
     pub remote_ip: Option<String>,
     pub remote_port: Option<u16>,
     pub domain: Option<String>,
+    pub incident_id: Option<Uuid>,
     pub severity: Severity,
     pub score: Option<u32>,
     pub action: Option<ResponseAction>,
     pub result: Option<String>,
+    pub agent_id: Option<String>,
+    pub agent_host: Option<String>,
 }
 
 impl Event {
@@ -101,10 +104,13 @@ impl Event {
             remote_ip: None,
             remote_port: None,
             domain: None,
+            incident_id: None,
             severity: Severity::Info,
             score: None,
             action: None,
             result: None,
+            agent_id: None,
+            agent_host: None,
         }
     }
 }
@@ -128,6 +134,7 @@ pub struct ThreatIndicator {
 pub struct Detection {
     pub id: Uuid,
     pub event_id: Uuid,
+    pub incident_id: Option<Uuid>,
     pub detection_engine: DetectionEngine,
     pub rule_id: Option<String>,
     pub rule_name: Option<String>,
@@ -183,4 +190,71 @@ pub struct Scan {
     pub threats_found: u32,
     pub suspicious_found: u32,
     pub status: ScanStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum IncidentStatus {
+    Open,
+    Investigating,
+    Resolved,
+    FalsePositive,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Incident {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub status: IncidentStatus,
+    pub global_score: u32,
+    pub summary: Option<String>,
+}
+
+// ── AC-15: Agent health / degraded mode ──
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AgentHealthStatus {
+    Running,
+    Degraded,
+    Stopped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleHealth {
+    pub name: String,
+    pub status: ModuleStatus,
+    pub message: Option<String>,
+    pub since: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ModuleStatus {
+    Ok,
+    Failed,
+    Disabled,
+}
+
+// F2.11: Console centralisée — Agent tracking
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AgentStatus {
+    Online,
+    Offline,
+    Degraded,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Agent {
+    pub id: String,
+    pub hostname: String,
+    pub ip_address: String,
+    pub os_version: String,
+    pub nkosi_version: String,
+    pub agent_name: String,
+    pub status: AgentStatus,
+    pub last_seen: DateTime<Utc>,
+    pub registered_at: DateTime<Utc>,
+    pub events_count: u32,
+    pub threats_count: u32,
+    pub score: u32,
 }

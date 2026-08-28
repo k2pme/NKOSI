@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NkosiConfig {
     pub agent: AgentConfig,
@@ -12,20 +12,6 @@ pub struct NkosiConfig {
     pub threat_intel: ThreatIntelConfig,
     pub logging: LoggingConfig,
     pub notifications: NotificationConfig,
-}
-
-impl Default for NkosiConfig {
-    fn default() -> Self {
-        Self {
-            agent: AgentConfig::default(),
-            monitors: MonitorConfig::default(),
-            risk: RiskConfig::default(),
-            quarantine: QuarantineConfig::default(),
-            threat_intel: ThreatIntelConfig::default(),
-            logging: LoggingConfig::default(),
-            notifications: NotificationConfig::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,7 +58,16 @@ impl Default for MonitorConfig {
                 PathBuf::from("/root/.config/autostart"),
                 PathBuf::from("/home/*/.config/autostart"),
             ],
-            excluded_paths: vec![PathBuf::from("/home/*/.cache"), PathBuf::from("/proc"), PathBuf::from("/sys")],
+            excluded_paths: vec![
+                PathBuf::from("/proc"),
+                PathBuf::from("/sys"),
+                PathBuf::from("/run"),
+                PathBuf::from("/home/*/.cache"),
+                PathBuf::from("*/.git"),
+                PathBuf::from("*/node_modules"),
+                PathBuf::from("*/target"),
+                PathBuf::from("/var/lib/docker"),
+            ],
             process_monitor_enabled: true,
             network_monitor_enabled: true,
         }
@@ -156,18 +151,12 @@ impl Default for ThreatIntelConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TiSource {
     pub name: String,
     pub url: String,
     pub enabled: bool,
-}
-
-impl Default for TiSource {
-    fn default() -> Self {
-        Self { name: String::new(), url: String::new(), enabled: false }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
