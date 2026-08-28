@@ -1,0 +1,26 @@
+[package]
+name = "nkosi-console"
+version = "0.1.0"
+edition = "2024"
+description = "NKOSI centralized console - multi-server web dashboard (F2.11)"
+
+[[bin]]
+name = "nkosi-console"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+chrono.workspace = true
+tonic = "0.11"
+prost = "0.12"
+actix-web = "4"
+actix-files = "0.6"
+actix-cors = "0.6"
+clap = { version = "4", features = ["derive", "env"] }
+
+[build-dependencies]
+tonic-build = "0.11"

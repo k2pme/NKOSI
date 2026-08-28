@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NKOSI — Console Centralisée</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0b1220;
+            --bg-secondary: #111a2e;
+            --bg-card: #1a2540;
+            --bg-card-hover: #1f2c4d;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-yellow: #eab308;
+            --accent-orange: #f97316;
+            --border: #223052;
+            --shadow: 0 8px 24px rgba(0,0,0,0.35);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+            background:
+                radial-gradient(1200px 500px at 85% -10%, rgba(59,130,246,0.12), transparent 60%),
+                radial-gradient(900px 400px at 0% 0%, rgba(6,182,212,0.08), transparent 55%),
+                var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .header {
+            position: sticky; top: 0; z-index: 20;
+            background: linear-gradient(90deg, rgba(17,26,46,0.92), rgba(17,26,46,0.75));
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 0.9rem 2rem;
+            display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+        }
+        .brand { display: flex; align-items: center; gap: 0.75rem; }
+        .brand .logo {
+            width: 38px; height: 38px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            display: grid; place-items: center; font-weight: 800; font-size: 1.1rem; color: #fff;
+            box-shadow: 0 4px 12px rgba(59,130,246,0.4);
+        }
+        .header h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: 0.02em; }
+        .header .sub { color: var(--text-secondary); font-size: 0.8rem; }
+
+        .header-right { display: flex; align-items: center; gap: 1rem; }
+        .status { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-green); animation: pulse 2s infinite; box-shadow: 0 0 8px rgba(34,197,94,0.6); }
+        .status-dot.off { background: var(--accent-red); animation: none; box-shadow: 0 0 8px rgba(239,68,68,0.6); }
+
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+        .countdown { color: var(--text-secondary); font-size: 0.75rem; min-width: 64px; text-align: right; }
+
+        .tabs {
+            position: sticky; top: 62px; z-index: 15;
+            background: rgba(17,26,46,0.85); backdrop-filter: blur(10px);
+            padding: 0.6rem 2rem; border-bottom: 1px solid var(--border);
+            display: flex; gap: 0.35rem; overflow-x: auto;
+        }
+        .tab {
+            padding: 0.5rem 1.1rem; background: transparent; color: var(--text-secondary);
+            border: 1px solid transparent; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 0.9rem;
+            white-space: nowrap; transition: all 0.15s;
+        }
+        .tab:hover { color: var(--text-primary); background: var(--bg-card); }
+        .tab.active { background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan)); color: #fff; box-shadow: 0 4px 12px rgba(59,130,246,0.35); }
+
+        .tab-content { display: none; padding: 1.75rem 2rem; max-width: 1500px; margin: 0 auto; }
+        .tab-content.active { display: block; animation: fadein 0.25s ease; }
+        @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+        .toolbar { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; }
+
+        input[type="text"], select {
+            background: var(--bg-secondary); color: var(--text-primary);
+            border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.9rem; font-size: 0.9rem;
+            min-width: 200px; outline: none; transition: border 0.15s;
+        }
+        input[type="text"]:focus, select:focus { border-color: var(--accent-blue); }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1.1rem; margin-bottom: 1.5rem; }
+        .stat-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+            padding: 1.15rem 1.25rem; position: relative; overflow: hidden; transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+        .stat-card .label { color: var(--text-secondary); font-size: 0.72rem; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.08em; }
+        .stat-card .value { font-size: 1.85rem; font-weight: 800; line-height: 1.1; }
+        .stat-card .value.green { color: var(--accent-green); }
+        .stat-card .value.red { color: var(--accent-red); }
+        .stat-card .value.yellow { color: var(--accent-yellow); }
+        .stat-card .value.blue { color: var(--accent-blue); }
+        .stat-card .value.cyan { color: var(--accent-cyan); }
+        .stat-card .value.orange { color: var(--accent-orange); }
+        .stat-card.glow-green::before, .stat-card.glow-red::before, .stat-card.glow-yellow::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+        .stat-card.glow-green::before { background: var(--accent-green); }
+        .stat-card.glow-red::before { background: var(--accent-red); }
+        .stat-card.glow-yellow::before { background: var(--accent-yellow); }
+
+        .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem 1.4rem; margin-bottom: 1.5rem; }
+        .panel h3 { font-size: 0.98rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; }
+
+        .panel-title { display: flex; align-items: center; gap: 0.5rem; }
+
+        .table-wrap { overflow-x: auto; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { text-align: left; padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+        td.trunc { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+        th { color: var(--text-secondary); font-weight: 600; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.07em; }
+        tr:hover { background: rgba(31,44,77,0.5); }
+        tr.clickable { cursor: pointer; }
+
+        .badge { display: inline-block; padding: 0.18rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+        .badge.online { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+        .badge.offline { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+        .badge.sev-Critical { background: rgba(239,68,68,0.2); color: #fca5a5; }
+        .badge.sev-High { background: rgba(249,115,22,0.2); color: #fdba74; }
+        .badge.sev-Medium { background: rgba(234,179,8,0.2); color: #fde047; }
+        .badge.sev-Low { background: rgba(59,130,246,0.2); color: #93c5fd; }
+        .badge.sev-Info { background: rgba(148,163,184,0.2); color: var(--text-secondary); }
+        .badge.os { background: rgba(6,182,212,0.15); color: var(--accent-cyan); }
+
+        .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
+        .chart-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.15rem 1.25rem; }
+        .chart-card h3 { font-size: 0.92rem; margin-bottom: 0.9rem; color: var(--text-secondary); font-weight: 600; }
+        .chart-card canvas { height: 260px !important; width: 100% !important; }
+
+        .btn {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            color: #fff; border: none; border-radius: 8px; padding: 0.55rem 1rem; cursor: pointer; font-weight: 600; font-size: 0.85rem;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        .btn:hover { opacity: 0.88; }
+        .btn:active { transform: scale(0.97); }
+        .btn.ghost { background: var(--bg-secondary); border: 1px solid var(--border); }
+        .btn.small { padding: 0.35rem 0.7rem; font-size: 0.78rem; }
+
+        .empty { color: var(--text-secondary); text-align: center; padding: 2rem; font-size: 0.9rem; }
+        .report-meta { color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 1rem; }
+
+        /* server cards */
+        .servers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.1rem; }
+        .server-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.1rem 1.25rem; transition: transform 0.15s, box-shadow 0.15s, border 0.15s; }
+        .server-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--accent-blue); }
+        .server-card .sc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.7rem; }
+        .server-card .sc-name { font-weight: 700; font-size: 1.02rem; }
+        .server-card .sc-host { color: var(--text-secondary); font-size: 0.78rem; }
+        .server-card .sc-metrics { display: flex; gap: 1rem; margin: 0.8rem 0 0.1rem; }
+        .server-card .metric { text-align: center; flex: 1; background: var(--bg-secondary); border-radius: 10px; padding: 0.5rem 0.2rem; }
+        .server-card .metric .m-val { font-size: 1.15rem; font-weight: 700; }
+        .server-card .metric .m-lab { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); }
+        .server-card .sc-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 0.8rem; }
+
+        .chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .chip { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 999px; padding: 0.35rem 0.8rem; font-size: 0.78rem; color: var(--text-secondary); }
+        .chip .n { color: var(--text-primary); font-weight: 700; }
+
+        .details-row { background: rgba(17,26,46,0.7); }
+        .details-row .det { padding: 0.9rem 1.4rem; white-space: normal; font-size: 0.83rem; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+
+        code { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 5px; padding: 0.1rem 0.35rem; font-size: 0.78rem; cursor: pointer; }
+        code:hover { border-color: var(--accent-blue); }
+        .copy-ok { color: var(--accent-green); font-size: 0.72rem; }
+
+        .toast {
+            position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 50;
+            background: var(--bg-card); border: 1px solid var(--border); border-left: 4px solid var(--accent-red);
+            padding: 0.8rem 1.1rem; border-radius: 10px; font-size: 0.85rem; box-shadow: var(--shadow);
+            transform: translateY(120%); transition: transform 0.25s ease; max-width: 320px;
+        }
+        .toast.show { transform: none; }
+        .toast.ok { border-left-color: var(--accent-green); }
+
+        .footer { text-align: center; color: var(--text-secondary); font-size: 0.72rem; padding: 1.5rem 1rem 2.5rem; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="brand">
+            <div class="logo">N</div>
+            <div>
+                <h1>NKOSI — Console Centralisée</h1>
+                <div class="sub">Surveillance multi-serveurs · agents → central gRPC</div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="status">
+                <span class="status-dot" id="connDot"></span>
+                <span id="connText">connexion…</span>
+            </div>
+            <div class="countdown" id="countdown">—</div>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab active" data-tab="overview">Vue d'ensemble</button>
+        <button class="tab" data-tab="servers">Serveurs / Agents</button>
+        <button class="tab" data-tab="alerts">Alertes agrégées</button>
+        <button class="tab" data-tab="events">Événements</button>
+        <button class="tab" data-tab="report">Rapport consolidé</button>
+    </div>
+
+    <div class="tab-content active" id="tab-overview">
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card"><div class="label">Agents total</div><div class="value blue" id="stAgents">—</div></div>
+            <div class="stat-card"><div class="label">En ligne</div><div class="value green" id="stOnline">—</div></div>
+            <div class="stat-card"><div class="label">Hors ligne</div><div class="value red" id="stOffline">—</div></div>
+            <div class="stat-card glow-yellow"><div class="label">Menaces (24h)</div><div class="value yellow" id="stThreats">—</div></div>
+            <div class="stat-card"><div class="label">Événements (24h)</div><div class="value cyan" id="stEvents">—</div></div>
+            <div class="stat-card"><div class="label">Score moyen</div><div class="value orange" id="stScore">—</div></div>
+        </div>
+        <div class="charts-grid">
+            <div class="chart-card"><h3>Menaces par sévérité</h3><canvas id="chartSeverity"></canvas></div>
+            <div class="chart-card"><h3>Événements par serveur</h3><canvas id="chartAgents"></canvas></div>
+        </div>
+        <div class="panel">
+            <h3><span class="panel-title">Alertes récentes (agrégées)</span></h3>
+            <div class="table-wrap"><table id="tblOverviewAlerts"></table></div>
+        </div>
+    </div>
+
+    <div class="tab-content" id="tab-servers">
+        <div class="toolbar">
+            <input type="text" id="hostFilter" placeholder="Filtrer par nom / IP / agent…">
+            <button class="btn" id="applyServersFilter">Appliquer</button>
+            <button class="btn ghost small" id="resetServers">Réinitialiser</button>
+        </div>
+        <div class="servers-grid" id="serversGrid"></div>
+    </div>
+
+    <div class="tab-content" id="tab-alerts">
+        <div class="toolbar">
+            <input type="text" id="alertHost" placeholder="Filtrer par host…">
+            <select id="alertSev">
+                <option value="">Toutes sévérités</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+            </select>
+            <button class="btn" id="applyAlertsFilter">Appliquer</button>
+        </div>
+        <div class="chips" id="alertsChips"></div>
+        <div class="panel"><h3><span class="panel-title">Alertes agrégées (Critical / High / Medium)</span></h3><div class="table-wrap"><table id="tblAlerts"></table></div></div>
+    </div>
+
+    <div class="tab-content" id="tab-events">
+        <div class="toolbar">
+            <input type="text" id="eventHost" placeholder="Filtrer par host…">
+            <select id="eventSev">
+                <option value="">Toutes sévérités</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+                <option value="Info">Info</option>
+            </select>
+            <button class="btn" id="applyEventsFilter">Appliquer</button>
+        </div>
+        <div class="panel"><h3><span class="panel-title">Événements consolidés <span style="font-size:0.75em;color:var(--text-secondary)" id="eventsCount"></span></span></h3><div class="table-wrap"><table id="tblEvents"></table></div></div>
+    </div>
+
+    <div class="tab-content" id="tab-report">
+        <div class="toolbar">
+            <input type="text" id="reportHost" placeholder="Filtrer par host…">
+            <button class="btn" id="generateReport">Générer le rapport</button>
+            <button class="btn ghost" id="exportReport">Exporter CSV</button>
+        </div>
+        <div class="report-meta" id="reportMeta"></div>
+        <div class="stats-grid" id="reportStats"></div>
+        <div class="panel">
+            <h3><span class="panel-title">Ventilation par serveur</span></h3>
+            <div class="table-wrap"><table id="tblReportAgents"></table></div>
+        </div>
+        <div class="panel">
+            <h3><span class="panel-title">Menaces non traitées</span></h3>
+            <div class="table-wrap"><table id="tblReport"></table></div>
+        </div>
+    </div>
+
+    <div class="footer">NKOSI · Console centralisée multi-agents — données agrégées par le serveur central gRPC</div>
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API = '';
+        let severityChart = null, agentsChart = null;
+        let alertsCache = [];
+        const SEV_COLORS = { 'Critical':'#ef4444', 'High':'#f97316', 'Medium':'#eab308', 'Low':'#3b82f6', 'Info':'#94a3b8' };
+
+        const tabs = document.querySelectorAll('.tab');
+        tabs.forEach(t => t.addEventListener('click', () => {
+            tabs.forEach(x => x.classList.remove('active'));
+            t.classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+            if (t.dataset.tab === 'report') loadReport();
+            if (t.dataset.tab === 'alerts') loadAlerts();
+            if (t.dataset.tab === 'events') loadEvents();
+            if (t.dataset.tab === 'servers') loadServers('');
+        }));
+
+        function toast(msg, ok=false) {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.classList.toggle('ok', ok);
+            el.classList.add('show');
+            clearTimeout(el._t);
+            el._t = setTimeout(() => el.classList.remove('show'), 2600);
+        }
+
+        async function api(path) {
+            const r = await fetch(API + path);
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+        }
+
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+        function sevBadge(s) { return `<span class="badge sev-${esc(s)}">${esc(s)}</span>`; }
+        function ts(i) { if (!i) return '—'; return new Date(i * 1000).toLocaleString(); }
+        function tsh(i) { if (!i) return '—'; return new Date(i * 1000).toLocaleTimeString(); }
+
+        function renderTable(el, headers, rows, expandable=false) {
+            if (!rows || rows.length === 0) { el.innerHTML = '<tr><td colspan="'+headers.length+'" class="empty">Aucune donnée</td></tr>'; return; }
+            const h = headers.map(x => `<th>${x}</th>`).join('');
+            el.innerHTML = `<thead><tr>${h}</tr></thead><tbody>${rows.join('')}</tbody>`;
+            if (expandable) {
+                el.querySelectorAll('tr[data-idx]').forEach(tr => {
+                    tr.addEventListener('click', () => {
+                        const idx = tr.dataset.idx;
+                        const existing = el.querySelector(`tr[data-det="${idx}"]`);
+                        if (existing) { existing.remove(); return; }
+                        tr.insertAdjacentHTML('afterend', `<tr class="details-row" data-det="${idx}"><td colspan="${headers.length}"><div class="det">${window._details[idx] || ''}</div></td></tr>`);
+                    });
+                });
+            }
+        }
+
+        function copyHash(hash) {
+            navigator.clipboard.writeText(hash).then(() => toast('Hash copié', true));
+        }
+
+        async function loadOverview() {
+            try {
+                const s = await api('/console/stats');
+                document.getElementById('stAgents').textContent = s.total_agents;
+                document.getElementById('stOnline').textContent = s.online_agents;
+                document.getElementById('stOffline').textContent = s.offline_agents;
+                document.getElementById('stThreats').textContent = s.total_threats_24h;
+                document.getElementById('stEvents').textContent = s.total_events_24h;
+                document.getElementById('stScore').textContent = s.avg_score;
+
+                const sevLabels = Object.keys(s.threats_by_severity || {});
+                const sevValues = sevLabels.map(k => s.threats_by_severity[k]);
+                if (severityChart) severityChart.destroy();
+                severityChart = new Chart(document.getElementById('chartSeverity'), {
+                    type: 'doughnut',
+                    data: { labels: sevLabels, datasets: [{ data: sevValues, backgroundColor: sevLabels.map(k => SEV_COLORS[k]||'#3b82f6'), borderColor: 'rgba(255,255,255,0.08)', borderWidth: 2 }] },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', boxWidth: 12, padding: 14 } } } }
+                });
+
+                const agLabels = Object.keys(s.events_by_agent || {});
+                const agValues = agLabels.map(k => s.events_by_agent[k]);
+                if (agentsChart) agentsChart.destroy();
+                agentsChart = new Chart(document.getElementById('chartAgents'), {
+                    type: 'bar',
+                    data: { labels: agLabels, datasets: [{ label: 'Événements', data: agValues, backgroundColor: agLabels.map((_,i)=>[ '#3b82f6','#06b6d4','#8b5cf6','#ec4899','#f59e0b' ][i%5]), borderRadius: 6 }] },
+                    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                        scales: { x: { grid: { color: 'rgba(148,163,184,0.08)' }, ticks: { color: '#94a3b8' } }, y: { grid: { display: false }, ticks: { color: '#94a3b8' } } } }
+                });
+
+                const al = await api('/console/alerts?limit=10');
+                renderTable(document.getElementById('tblOverviewAlerts'),
+                    ['Heure','Host','Sévérité','Type','Fichier','IP','Score'],
+                    al.alerts.map(a =>
+                        `<tr><td>${tsh(a.timestamp)}</td><td>${esc(a.agent_host)}</td><td>${sevBadge(a.severity)}</td><td>${esc(a.event_type)}</td><td class="trunc">${esc(a.file_path)}</td><td>${esc(a.remote_ip)}</td><td>${a.score}</td></tr>`));
+            } catch (e) { console.error('overview', e); }
+        }
+
+        async function loadServers(filter) {
+            try {
+                const q = filter ? '?host=' + encodeURIComponent(filter) : '';
+                const d = await api('/console/agents' + q);
+                const grid = document.getElementById('serversGrid');
+                if (!d.agents.length) { grid.innerHTML = '<div class="empty" style="grid-column:1/-1">Aucun agent enregistré</div>'; return; }
+                grid.innerHTML = d.agents.map(a => `
+                    <div class="server-card">
+                        <div class="sc-top">
+                            <div>
+                                <div class="sc-name">${esc(a.hostname)}</div>
+                                <div class="sc-host">${esc(a.ip_address)} · ${esc(a.os_version)}</div>
+                            </div>
+                            <span class="badge ${a.status}">${a.status}</span>
+                        </div>
+                        <div class="sc-metrics">
+                            <div class="metric"><div class="m-val">${a.events_count}</div><div class="m-lab">Événements</div></div>
+                            <div class="metric"><div class="m-val">${a.threats_count}</div><div class="m-lab">Menaces</div></div>
+                            <div class="metric"><div class="m-val">${a.score}</div><div class="m-lab">Score</div></div>
+                        </div>
+                        <div class="sc-footer">
+                            <span class="badge os">${esc(a.nkosi_version)}</span>
+                            <button class="btn small" data-host="${esc(a.hostname)}">Voir les alertes</button>
+                        </div>
+                    </div>`).join('');
+                grid.querySelectorAll('button[data-host]').forEach(btn => btn.addEventListener('click', () => {
+                    document.getElementById('alertHost').value = btn.dataset.host;
+                    tabs.forEach(x => x.classList.remove('active'));
+                    document.querySelector('[data-tab="alerts"]').classList.add('active');
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    document.getElementById('tab-alerts').classList.add('active');
+                    loadAlerts(btn.dataset.host, '');
+                }));
+            } catch (e) { console.error('servers', e); }
+        }
+
+        function renderAlertsChips(list) {
+            const byType = {};
+            list.forEach(a => { byType[a.event_type] = (byType[a.event_type]||0) + 1; });
+            const entries = Object.entries(byType).sort((a,b)=>b[1]-a[1]).slice(0,8);
+            document.getElementById('alertsChips').innerHTML = entries.length
+                ? entries.map(([t,n]) => `<span class="chip">${esc(t)} · <span class="n">${n}</span></span>`).join('')
+                : '<span class="chip">Aucune alerte</span>';
+        }
+
+        async function loadAlerts(host='', sev='') {
+            try {
+                const p = new URLSearchParams({ limit: '200' });
+                if (host) p.set('host', host);
+                if (sev) p.set('severity', sev);
+                const d = await api('/console/alerts?' + p.toString());
+                alertsCache = d.alerts;
+                renderAlertsChips(d.alerts);
+                renderTable(document.getElementById('tblAlerts'),
+                    ['Heure','Host','Sévérité','Type','Fichier','IP','Score'],
+                    d.alerts.map(a =>
+                        `<tr><td>${tsh(a.timestamp)}</td><td>${esc(a.agent_host)}</td><td>${sevBadge(a.severity)}</td><td>${esc(a.event_type)}</td><td class="trunc">${esc(a.file_path)}</td><td>${esc(a.remote_ip)}</td><td>${a.score}</td></tr>`));
+            } catch (e) { console.error('alerts', e); }
+        }
+
+        async function loadEvents(host='', sev='') {
+            try {
+                const p = new URLSearchParams({ limit: '300' });
+                if (host) p.set('host', host);
+                if (sev) p.set('severity', sev);
+                const d = await api('/console/events?' + p.toString());
+                document.getElementById('eventsCount').textContent = '· ' + d.total + ' événement(s)';
+                window._details = d.alerts.map(a =>
+                    `<b>Détails :</b> ${esc(a.details || '—')}<br>
+                     <b>Hash :</b> <code onclick="copyHash('${esc(a.file_hash)}')">${esc(a.file_hash || '—')}</code> (clic pour copier)<br>
+                     <b>Domaine :</b> ${esc(a.domain || '—')} &nbsp; <b>Port :</b> ${esc(a.remote_port)} &nbsp; <b>Agent ID :</b> ${esc(a.agent_id||'').slice(0,8)}`);
+                renderTable(document.getElementById('tblEvents'),
+                    ['Heure','Host','Sévérité','Type','Fichier','Hash','IP','Score'],
+                    d.alerts.map((a,i) =>
+                        `<tr data-idx="${i}"><td>${tsh(a.timestamp)}</td><td>${esc(a.agent_host)}</td><td>${sevBadge(a.severity)}</td><td>${esc(a.event_type)}</td><td class="trunc">${esc(a.file_path)}</td><td><code>${esc((a.file_hash||'').slice(0,12))}</code></td><td>${esc(a.remote_ip)}</td><td>${a.score}</td></tr>`),
+                    true);
+            } catch (e) { console.error('events', e); }
+        }
+
+        function exportCSV() {
+            const rows = [['Heure','Host','Sévérité','Type','Fichier','Hash','IP','Score','Détails']];
+            alertsCache.forEach(a => rows.push([ts(a.timestamp), a.agent_host, a.severity, a.event_type, a.file_path, a.file_hash, a.remote_ip, a.score, a.details]));
+            const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob); a.download = 'nkosi-report.csv'; a.click();
+            toast('Rapport CSV exporté', true);
+        }
+
+        async function loadReport(host='') {
+            try {
+                const q = host ? '?host=' + encodeURIComponent(host) : '';
+                const d = await api('/console/report' + q);
+                document.getElementById('reportMeta').textContent = 'Généré le ' + new Date(d.generated).toLocaleString() + ' — ' + d.agents.length + ' serveur(s)';
+                const st = d.stats;
+                document.getElementById('reportStats').innerHTML = [
+                    ['Agents', st.total_agents, 'blue'], ['En ligne', st.online_agents, 'green'],
+                    ['Hors ligne', st.offline_agents, 'red'], ['Menaces 24h', st.total_threats_24h, 'yellow'],
+                    ['Événements 24h', st.total_events_24h, 'cyan'], ['Score moy.', st.avg_score, 'orange']
+                ].map(s => `<div class="stat-card"><div class="label">${s[0]}</div><div class="value ${s[2]}">${s[1]}</div></div>`).join('');
+
+                renderTable(document.getElementById('tblReportAgents'),
+                    ['Serveur','IP','OS','État','Événements','Menaces','Score'],
+                    d.agents.map(a =>
+                        `<tr><td>${esc(a.hostname)} (${esc(a.agent_name)})</td><td>${esc(a.ip_address)}</td><td>${esc(a.os_version)}</td><td><span class="badge ${a.status}">${a.status}</span></td><td>${a.events_count}</td><td>${a.threats_count}</td><td>${a.score}</td></tr>`));
+
+                renderTable(document.getElementById('tblReport'),
+                    ['Heure','Host','Sévérité','Type','Fichier','IP','Score'],
+                    d.unreviewed_threats.map(a =>
+                        `<tr><td>${ts(a.timestamp)}</td><td>${esc(a.agent_host)}</td><td>${sevBadge(a.severity)}</td><td>${esc(a.event_type)}</td><td class="trunc">${esc(a.file_path)}</td><td>${esc(a.remote_ip)}</td><td>${a.score}</td></tr>`));
+            } catch (e) { console.error('report', e); }
+        }
+
+        async function checkConnectivity() {
+            try {
+                const c = await api('/console/connectivity');
+                document.getElementById('connText').textContent = c.reachable ? 'Central connecté' : 'Central injoignable';
+                document.getElementById('connDot').classList.toggle('off', !c.reachable);
+            } catch (e) {
+                document.getElementById('connText').textContent = 'Console indisponible';
+                document.getElementById('connDot').classList.add('off');
+            }
+        }
+
+        // auto-refresh countdown (10s cycle)
+        let refreshLeft = 10;
+        setInterval(() => {
+            refreshLeft -= 1;
+            document.getElementById('countdown').textContent = 'Rafraîchit dans ' + refreshLeft + 's';
+            if (refreshLeft <= 0) {
+                refreshLeft = 10;
+                const active = document.querySelector('.tab.active').dataset.tab;
+                if (active === 'overview') loadOverview();
+                if (active === 'servers') loadServers(document.getElementById('hostFilter').value);
+                if (active === 'alerts') loadAlerts(document.getElementById('alertHost').value, document.getElementById('alertSev').value);
+                if (active === 'events') loadEvents(document.getElementById('eventHost').value, document.getElementById('eventSev').value);
+                checkConnectivity();
+            }
+        }, 1000);
+
+        document.getElementById('applyServersFilter').addEventListener('click', () => loadServers(document.getElementById('hostFilter').value));
+        document.getElementById('resetServers').addEventListener('click', () => { document.getElementById('hostFilter').value=''; loadServers(''); });
+        document.getElementById('applyAlertsFilter').addEventListener('click', () => loadAlerts(document.getElementById('alertHost').value, document.getElementById('alertSev').value));
+        document.getElementById('applyEventsFilter').addEventListener('click', () => loadEvents(document.getElementById('eventHost').value, document.getElementById('eventSev').value));
+        document.getElementById('generateReport').addEventListener('click', () => loadReport(document.getElementById('reportHost').value));
+        document.getElementById('exportReport').addEventListener('click', exportCSV);
+
+        // Enter submits on filter inputs
+        ['hostFilter','alertHost','eventHost','reportHost'].forEach(id => document.getElementById(id).addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                const t = document.querySelector('.tab.active').dataset.tab;
+                if (t==='servers') loadServers(document.getElementById('hostFilter').value);
+                if (t==='alerts') loadAlerts(document.getElementById('alertHost').value, document.getElementById('alertSev').value);
+                if (t==='events') loadEvents(document.getElementById('eventHost').value, document.getElementById('eventSev').value);
+                if (t==='report') loadReport(document.getElementById('reportHost').value);
+            }
+        }));
+
+        loadOverview();
+        checkConnectivity();
+        setTimeout(() => loadAlerts('',''), 500);
+    </script>
+</body>
+</html>
