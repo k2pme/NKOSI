@@ -76,6 +76,9 @@ message SecurityEvent {
     uint32 remote_port = 10;
     string domain = 11;
     string details = 12;
+    // Agent (agent_id) the event originates from, used for multi-server
+    // host attribution and console filtering.
+    string agent_id = 13;
 }
 
 message EventAck {
