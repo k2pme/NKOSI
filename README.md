@@ -115,6 +115,8 @@ nkosi-cli scan /home -r          # scan files
 nkosi-cli simulate               # run threat simulation
 ```
 
+See [`doc/USAGE.md`](doc/USAGE.md#2-running-the-ecosystem-developmentdemo) for ecosystem startup and [`doc/openapi.yaml`](doc/openapi.yaml) for the REST API reference.
+
 ### Install (production)
 
 See [`doc/INSTALLATION.md`](doc/INSTALLATION.md) for details.
@@ -170,6 +172,9 @@ curl -X POST http://localhost:8080/api/simulate \
 - [`doc/INSTALLATION.md`](doc/INSTALLATION.md) — Full installation guide
 - [`doc/PREREQUIS.md`](doc/PREREQUIS.md) — System prerequisites
 - [`doc/USAGE.md`](doc/USAGE.md) — Complete usage guide (A to Z)
+- [`doc/advanced.md`](doc/advanced.md) — Advanced features roadmap for production servers
+- [`doc/openapi.yaml`](doc/openapi.yaml) — REST API specification (OpenAPI 3.0)
+- [`doc/grpc-openapi.yaml`](doc/grpc-openapi.yaml) — Central gRPC API specification (OpenAPI 3.0)
 
 ---
 

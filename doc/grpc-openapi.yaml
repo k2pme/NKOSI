@@ -1,0 +1,339 @@
+openapi: 3.0.3
+info:
+  title: NKOSI Central gRPC API
+  version: 0.1.0
+  description: |
+    NKOSI Central gRPC service for multi-agent management.
+
+    ## Service
+    `NkosiCentral` runs on port `50051`.
+
+    ## Authentication
+    Set the same `NKOSI_CENTRAL_TOKEN` secret on both the central server and agents.
+    Agents send the token via gRPC metadata key `x-nkosi-token`.
+
+    ## Protocol
+    This API uses gRPC (HTTP/2). For REST/JSON access, use the REST API on port `8080`.
+
+servers:
+  - url: grpc://localhost:50051
+    description: Local NKOSI Central gRPC service
+
+components:
+  securitySchemes:
+    CentralToken:
+      type: apiKey
+      in: header
+      name: x-nkosi-token
+
+  schemas:
+    Empty:
+      type: object
+      description: Empty request message.
+
+    AgentInfo:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        hostname:
+          type: string
+        ip_address:
+          type: string
+        os_version:
+          type: string
+        nkosi_version:
+          type: string
+        agent_name:
+          type: string
+
+    AgentRegistration:
+      type: object
+      properties:
+        central_id:
+          type: string
+        success:
+          type: boolean
+        message:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+
+    AgentHeartbeat:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+        events_count:
+          type: integer
+        threats_count:
+          type: integer
+        score:
+          type: integer
+
+    HeartbeatAck:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        server_time:
+          type: integer
+          format: int64
+        update_available:
+          type: boolean
+        latest_version:
+          type: string
+
+    SecurityEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+        event_type:
+          type: string
+        source_module:
+          type: string
+        severity:
+          type: string
+        score:
+          type: integer
+        file_path:
+          type: string
+        file_hash:
+          type: string
+        remote_ip:
+          type: string
+        remote_port:
+          type: integer
+        domain:
+          type: string
+        details:
+          type: string
+        agent_id:
+          type: string
+
+    EventBatch:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecurityEvent'
+
+    EventAck:
+      type: object
+      properties:
+        success:
+          type: boolean
+        received_count:
+          type: integer
+        message:
+          type: string
+
+    AgentList:
+      type: object
+      properties:
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentInfo'
+        timestamp:
+          type: integer
+          format: int64
+
+    EventQuery:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        severity:
+          type: string
+        start_time:
+          type: integer
+          format: int64
+        end_time:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+
+    EventList:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecurityEvent'
+        total:
+          type: integer
+
+    Stats:
+      type: object
+      properties:
+        total_agents:
+          type: integer
+        online_agents:
+          type: integer
+        offline_agents:
+          type: integer
+        total_events_24h:
+          type: integer
+        total_threats_24h:
+          type: integer
+        avg_score:
+          type: integer
+        events_by_agent:
+          type: object
+          additionalProperties:
+            type: integer
+        threats_by_severity:
+          type: object
+          additionalProperties:
+            type: integer
+
+paths:
+  /nkosi.central.NkosiCentral/RegisterAgent:
+    post:
+      summary: Register agent
+      description: |
+        Registers an agent with the central server. The agent sends its hostname,
+        IP address, OS version, NKOSI version, and agent name. On success, the
+        central returns a registration acknowledgment.
+      operationId: registerAgent
+      security:
+        - CentralToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentInfo'
+      responses:
+        '200':
+          description: Agent registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRegistration'
+
+  /nkosi.central.NkosiCentral/Heartbeat:
+    post:
+      summary: Send heartbeat
+      description: |
+        Agents send periodic heartbeats to indicate they are alive.
+        The heartbeat includes the current event count, threat count, and latest risk score.
+      operationId: heartbeat
+      security:
+        - CentralToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentHeartbeat'
+      responses:
+        '200':
+          description: Heartbeat acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatAck'
+
+  /nkosi.central.NkosiCentral/ReportEvents:
+    post:
+      summary: Report events
+      description: |
+        Agents batch-report recent security events to the central server.
+        Only medium+ severity events are typically forwarded to reduce noise.
+      operationId: reportEvents
+      security:
+        - CentralToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventBatch'
+      responses:
+        '200':
+          description: Events received
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventAck'
+
+  /nkosi.central.NkosiCentral/GetAgents:
+    post:
+      summary: List agents
+      description: Returns the list of all registered agents from the central registry.
+      operationId: getAgents
+      security:
+        - CentralToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Empty'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentList'
+
+  /nkosi.central.NkosiCentral/GetEvents:
+    post:
+      summary: Query events
+      description: |
+        Query events across all agents with optional filtering by agent ID,
+        severity, and time range.
+      operationId: getEvents
+      security:
+        - CentralToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventQuery'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventList'
+
+  /nkosi.central.NkosiCentral/GetStats:
+    post:
+      summary: Get aggregated stats
+      description: Returns aggregated statistics across all agents for the last 24 hours.
+      operationId: getStats
+      security:
+        - CentralToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Empty'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'

@@ -1,0 +1,821 @@
+openapi: 3.0.3
+info:
+  title: NKOSI API
+  version: 0.1.0
+  description: |
+    NKOSI Linux antivirus/EDR API.
+
+    ## Authentication
+    Protected endpoints require an API key passed in the `X-API-Key` header.
+
+    ## Rate limiting
+    Requests are rate-limited per client IP. Exceeding the limit returns `429 Too Many Requests`.
+
+    ## Simulation
+    Threat simulation endpoints generate synthetic malicious artifacts and run them through the full detection pipeline (hash, YARA, static analysis, risk scoring, response, quarantine, notifications). These endpoints are intended for testing only.
+
+servers:
+  - url: http://localhost:8080
+    description: Local NKOSI REST API
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: integer
+
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+        db_status:
+          type: string
+        modules:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              status:
+                type: string
+              message:
+                type: string
+                nullable: true
+
+    ModuleHealthStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+          nullable: true
+
+    EventsResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        total:
+          type: integer
+
+    FilteredEventsQuery:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        host:
+          type: string
+        severity:
+          type: string
+        limit:
+          type: integer
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: string
+        event_type:
+          type: string
+        source_module:
+          type: string
+        pid:
+          type: integer
+          nullable: true
+        ppid:
+          type: integer
+          nullable: true
+        user:
+          type: string
+          nullable: true
+        file_path:
+          type: string
+          nullable: true
+        file_hash:
+          type: string
+          nullable: true
+        remote_ip:
+          type: string
+          nullable: true
+        remote_port:
+          type: integer
+          nullable: true
+        domain:
+          type: string
+          nullable: true
+        incident_id:
+          type: string
+          nullable: true
+        severity:
+          type: string
+        score:
+          type: integer
+          nullable: true
+        action:
+          type: string
+          nullable: true
+        result:
+          type: string
+          nullable: true
+        agent_id:
+          type: string
+          nullable: true
+        agent_host:
+          type: string
+          nullable: true
+
+    QuarantineResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuarantineItem'
+        total:
+          type: integer
+
+    QuarantineItem:
+      type: object
+      properties:
+        id:
+          type: string
+        original_path:
+          type: string
+        quarantine_path:
+          type: string
+        sha256:
+          type: string
+        reason:
+          type: string
+        score:
+          type: integer
+        quarantined_at:
+          type: string
+        restored_at:
+          type: string
+          nullable: true
+        deleted_at:
+          type: string
+          nullable: true
+        status:
+          type: string
+
+    ScanRequest:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Absolute path to scan. Required for file/directory scans.
+        scan_type:
+          type: string
+          enum: [quick, full, rootkit, integrity, kernel, ssh]
+          default: quick
+
+    ScanResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        score:
+          type: integer
+          nullable: true
+        findings_count:
+          type: integer
+
+    FirewallStatusResponse:
+      type: object
+      properties:
+        ipv4_available:
+          type: boolean
+        ipv6_available:
+          type: boolean
+        nkosi_chain_exists:
+          type: boolean
+        rules_count:
+          type: integer
+        blacklist_count:
+          type: integer
+        whitelist_count:
+          type: integer
+
+    FirewallBlockRequest:
+      type: object
+      required:
+        - ip
+      properties:
+        ip:
+          type: string
+          description: IPv4 address or CIDR to block.
+        comment:
+          type: string
+          description: Optional comment for the firewall rule.
+          maxLength: 256
+
+    FirewallActionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+
+    AgentsResponse:
+      type: object
+      properties:
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
+        total:
+          type: integer
+
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+        hostname:
+          type: string
+        ip_address:
+          type: string
+        os_version:
+          type: string
+        nkosi_version:
+          type: string
+        agent_name:
+          type: string
+        status:
+          type: string
+        last_seen:
+          type: string
+        registered_at:
+          type: string
+        events_count:
+          type: integer
+        threats_count:
+          type: integer
+        score:
+          type: integer
+
+    AgentDetailResponse:
+      type: object
+      properties:
+        agent:
+          $ref: '#/components/schemas/Agent'
+          nullable: true
+
+    AlertItem:
+      type: object
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: string
+        agent_host:
+          type: string
+        severity:
+          type: string
+        event_type:
+          type: string
+        source_module:
+          type: string
+        file_path:
+          type: string
+          nullable: true
+        remote_ip:
+          type: string
+          nullable: true
+        score:
+          type: integer
+          nullable: true
+
+    AlertsResponse:
+      type: object
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertItem'
+        total:
+          type: integer
+
+    ConsolidatedStatsResponse:
+      type: object
+      properties:
+        total_agents:
+          type: integer
+        online_agents:
+          type: integer
+        offline_agents:
+          type: integer
+        total_events:
+          type: integer
+        total_threats:
+          type: integer
+        total_quarantine:
+          type: integer
+
+    ConsolidatedReportResponse:
+      type: object
+      properties:
+        stats:
+          $ref: '#/components/schemas/ConsolidatedStatsResponse'
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
+        recent_alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertItem'
+
+    SimulationScenario:
+      type: string
+      enum: [Ransomware, Cryptominer, Webshell, Trojan, Spyware, Backdoor]
+
+    SimulateRequest:
+      type: object
+      properties:
+        scenarios:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimulationScenario'
+          default:
+            - Ransomware
+            - Cryptominer
+            - Webshell
+        count:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 1
+
+    SimulateResponse:
+      type: object
+      properties:
+        simulated:
+          type: integer
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        message:
+          type: string
+
+paths:
+  /api/status:
+    get:
+      summary: Get API and agent status
+      description: Returns the current agent status, version, database status, and module health. This endpoint is public and does not require authentication.
+      operationId: getStatus
+      security: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/events:
+    get:
+      summary: Get recent events
+      description: Returns the most recent security events stored in the local database.
+      operationId: getEvents
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of events to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 100
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsResponse'
+        '400':
+          description: Invalid limit parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/events/filtered:
+    get:
+      summary: Get filtered events
+      description: Returns events filtered by agent ID, host, severity, and limit.
+      operationId: getEventsFiltered
+      parameters:
+        - name: agent_id
+          in: query
+          description: Filter by agent ID.
+          schema:
+            type: string
+        - name: host
+          in: query
+          description: Filter by host name.
+          schema:
+            type: string
+        - name: severity
+          in: query
+          description: Filter by severity level.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of events to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 100
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/quarantine:
+    get:
+      summary: Get quarantine items
+      description: Returns all active quarantine items.
+      operationId: getQuarantine
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuarantineResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/scan:
+    post:
+      summary: Trigger a scan
+      description: Starts a scan of the specified type. For `quick` and `full`, optionally provide an absolute `path`.
+      operationId: triggerScan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanRequest'
+      responses:
+        '200':
+          description: Scan completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/firewall/status:
+    get:
+      summary: Get firewall status
+      description: Returns the current iptables/ip6tables status and NKOSI chain information.
+      operationId: getFirewallStatus
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirewallStatusResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/firewall/block:
+    post:
+      summary: Block an IP address
+      description: Blocks an IPv4 address or CIDR via iptables.
+      operationId: blockIp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FirewallBlockRequest'
+      responses:
+        '200':
+          description: IP blocked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirewallActionResponse'
+        '400':
+          description: Invalid IP or comment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/firewall/unblock/{ip}:
+    post:
+      summary: Unblock an IP address
+      description: Removes an IPv4 address or CIDR from the NKOSI firewall blocklist.
+      operationId: unblockIp
+      parameters:
+        - name: ip
+          in: path
+          required: true
+          description: IPv4 address or CIDR to unblock.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: IP unblocked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirewallActionResponse'
+        '400':
+          description: Invalid IP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/agents:
+    get:
+      summary: List all agents
+      description: Returns all registered agents and their current status.
+      operationId: getAgents
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentsResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/agents/{id}:
+    get:
+      summary: Get agent details
+      description: Returns details for a specific agent by ID.
+      operationId: getAgentDetail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Agent ID.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentDetailResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/alertes:
+    get:
+      summary: Get recent alerts
+      description: Returns recent security alerts (Critical, High, Medium severity events).
+      operationId: getAlertes
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertsResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/stats/consolidated:
+    get:
+      summary: Get consolidated statistics
+      description: Returns aggregated statistics across all registered agents.
+      operationId: getConsolidatedStats
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolidatedStatsResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/report/consolidated:
+    get:
+      summary: Get consolidated report
+      description: Returns a full consolidated report including stats, agents, and recent alerts.
+      operationId: getConsolidatedReport
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolidatedReportResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/simulate:
+    post:
+      summary: Simulate threats
+      description: |
+        Generates synthetic threat events and runs them through the full detection pipeline.
+        Each simulated event is created with the source `simulator_api` and can be used for testing
+        detection rules, risk scoring, response actions, notifications, and incident creation.
+      operationId: simulateThreats
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulateRequest'
+      responses:
+        '200':
+          description: Simulation completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulateResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

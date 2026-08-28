@@ -516,6 +516,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
     tonic::transport::Server::builder()
+        .add_service(
+            tonic_reflection::server::Builder::configure()
+                .register_encoded_file_descriptor_set(
+                    include_bytes!("../proto/central_descriptor.bin"),
+                )
+                .build()?,
+        )
         .add_service(guarded_service)
         .serve(addr)
         .await?;

@@ -196,3 +196,19 @@ journalctl -u nkosi-agent -f
 | agent not reporting alerts | central unreachable | check `NKOSI_CENTRAL_ADDR` |
 
 See `doc/INSTALLATION.md` and `doc/PREREQUIS.md` for installation details.
+
+---
+
+## 8. API reference
+
+- [`doc/openapi.yaml`](doc/openapi.yaml) — REST API specification (OpenAPI 3.0)
+- [`doc/grpc-openapi.yaml`](doc/grpc-openapi.yaml) — Central gRPC API specification (OpenAPI 3.0)
+
+The REST API is served on port `8080`. The central gRPC service is served on port `50051`.
+Both specs include authentication, rate limiting, request/response schemas, and error codes.
+
+---
+
+## 9. Advanced features for production servers
+
+- [`doc/advanced.md`](doc/advanced.md) — Advanced detection, response, hunting, hardening, and forensics features to make NKOSI more aggressive and powerful on a production server.

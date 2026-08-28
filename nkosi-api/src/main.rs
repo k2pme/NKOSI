@@ -114,6 +114,11 @@ async fn main() -> std::io::Result<()> {
             // Public
             .route("/api/status", web::get().to(handlers::status::get_status))
             .route("/metrics", web::get().to(get_metrics))
+            .route("/api/docs", web::get().to(handlers::docs::openapi_docs))
+            .route(
+                "/api/grpc-docs",
+                web::get().to(handlers::docs::grpc_openapi_docs),
+            )
             // Protected (auth checked inside handlers)
             .route("/api/events", web::get().to(handlers::events::get_events))
             .route(
