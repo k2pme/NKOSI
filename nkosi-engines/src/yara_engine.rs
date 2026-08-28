@@ -46,6 +46,20 @@ impl YaraEngine {
         engine
     }
 
+    /// Prefers the real YARA engine when the `real-yara` feature is enabled,
+    /// otherwise falls back to the regex-based stub. Use this in production
+    /// entry points (agent, cli) so the compiled engine matches the feature.
+    pub fn new_prefer_real() -> Self {
+        #[cfg(feature = "real-yara")]
+        {
+            Self::new_with_real_yara()
+        }
+        #[cfg(not(feature = "real-yara"))]
+        {
+            Self::new()
+        }
+    }
+
     fn load_default_rules(&mut self) {
         let default_rules = vec![
             YaraRule {

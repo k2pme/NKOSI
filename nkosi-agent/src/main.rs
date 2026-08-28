@@ -408,7 +408,7 @@ impl Engines {
     fn new(_config: &NkosiConfig) -> Self {
         Self {
             hash: HashEngine::new(),
-            yara: YaraEngine::new(),
+            yara: YaraEngine::new_prefer_real(),
             static_analyzer: StaticAnalyzer::new(),
             behavior: BehaviorEngine::new(),
         }

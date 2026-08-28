@@ -11,8 +11,10 @@
 #       par les build.rs de nkosi-central, nkosi-console et nkosi-agent.
 #       Sans protoc, ces crates ne compilent pas.
 #   libyara-dev
-#       Optionnel : le moteur YARA réel (feature `real-yara`) en dépend.
-#       Installé seulement si --with-yara est passé.
+#       Requis (OBLIGATOIRE) : le moteur YARA réel (feature `real-yara`)
+#       est activé par défaut dans nkosi-agent et nkosi-cli pour le bon
+#       fonctionnement du scan de fichiers. Sans libyara, ces crates ne
+#       compilent pas. L'option --skip-yara est disponible en dernier recours.
 #   iptables / ip6tables
 #       Requis au RUNTIME : le module nkosi-scanner/firewall bloque les IP
 #       via iptables. Utile pour la réponse automatique aux menaces.
@@ -24,9 +26,9 @@
 # (APT/DNF/PACMAN/Zypper/PKG) et installe les paquets correspondants.
 #
 # Usage :
-#   sudo ./scripts/install-deps.sh          # minimum requis (protoc + outils)
-#   sudo ./scripts/install-deps.sh --yara   # + libyara (moteur YARA réel)
+#   sudo ./scripts/install-deps.sh          # tout le requis (protoc + libyara + outils)
 #   sudo ./scripts/install-deps.sh --skip-protoc  # si protoc déjà présent
+#   sudo ./scripts/install-deps.sh --skip-yara    # dernier recours (pas de moteur YARA)
 #
 # Vérifie aussi la présence de protoc sur le PATH et guide l'installation
 # d'un binaire protoc si le paquet système n'est pas disponible.
@@ -39,6 +41,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 WITH_YARA=0
 SKIP_PROTOC=0
+SKIP_YARA=0
 PROTOC_MIN_VERSION="3.15"
 
 # ---------------------------------------------------------------------------
@@ -67,6 +70,7 @@ for arg in "$@"; do
         --yara) WITH_YARA=1 ;;
         --with-yara) WITH_YARA=1 ;;
         --skip-protoc) SKIP_PROTOC=1 ;;
+        --skip-yara) SKIP_YARA=1 ;;
         -h|--help) usage ;;
         *) warn "Argument ignoré : $arg" ;;
     esac
@@ -185,7 +189,7 @@ install_protoc_binary() {
 }
 
 # ---------------------------------------------------------------------------
-# 2) Installation de libyara-dev (optionnel, feature real-yara)
+# 2) Installation de libyara-dev (obligatoire, feature real-yara)
 # ---------------------------------------------------------------------------
 install_yara() {
     case "$PKG_MGR" in
@@ -195,7 +199,7 @@ install_yara() {
         zypper) install_pkgs "yara-devel" ;;
         apk) install_pkgs "yara-dev" ;;
         brew) install_pkgs "yara" ;;
-        unknown) warn "Installez libyara-dev manuellement pour activer la feature real-yara." ;;
+        unknown) fail "Aucun gestionnaire détecté : installez libyara-dev manuellement." ;;
     esac
 }
 
@@ -232,12 +236,12 @@ fi
 # 2) outils de build / runtime (iptables)
 install_build_tools
 
-# 3) yara (optionnel)
-if [ "$WITH_YARA" = "1" ]; then
+# 3) yara (obligatoire pour le moteur YARA réel)
+if [ "$SKIP_YARA" = "1" ]; then
+    warn "--skip-yara : libyara non installé. Le build des crates nkosi-agent/nkosi-cli échouera sans libyara."
+else
     info "Installation de libyara (feature real-yara)..."
     install_yara
-else
-    info "libyara non demandé (moteur YARA restera en fallback). Utilisez --yara pour l'installer."
 fi
 
 # ---------------------------------------------------------------------------
@@ -249,7 +253,7 @@ if command -v protoc >/dev/null 2>&1; then
 else
     warn "protoc n'est pas sur le PATH. Le build des crates gRPC (central/console/agent) nécessitera protoc."
 fi
-if [ "$WITH_YARA" = "1" ] && ! ldconfig -p 2>/dev/null | grep -q libyara && ! grep -q yara /proc/self/maps 2>/dev/null; then
+if [ "$SKIP_YARA" = "0" ] && ! ldconfig -p 2>/dev/null | grep -q libyara && ! grep -q yara /proc/self/maps 2>/dev/null; then
     warn "libyara introuvable — vérifiez l'installation (paquet native library)."
 fi
 info "Ensuite : cargo build --workspace"

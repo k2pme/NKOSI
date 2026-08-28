@@ -504,7 +504,7 @@ async fn handle_process_scan(pid: u32) -> Result<()> {
         println!("  Exécutable réel: {}", exe.display());
         
         let mut hash_engine = HashEngine::new();
-        let yara_engine = YaraEngine::new();
+        let yara_engine = YaraEngine::new_prefer_real();
         let static_analyzer = StaticAnalyzer::new();
         
         if let Some(detection) = scan_file(&exe, &mut hash_engine, &yara_engine, &static_analyzer) {
