@@ -1,6 +1,7 @@
 use anyhow::Result;
 use nkosi_common::config::NkosiConfig;
 use nkosi_common::types::*;
+use nkosi_core::{load_config, init_database};
 use nkosi_db::Database;
 use nkosi_engines::{HashEngine, YaraEngine, StaticAnalyzer, BehaviorEngine};
 use nkosi_monitors::{EventBus, FilesystemMonitor, ProcessMonitor, NetworkMonitor, MonitorEvent};
@@ -8,12 +9,230 @@ use nkosi_notify::{NotifyManager, Alert, AlertLevel, AlertDetails, NotifyConfig}
 use nkosi_risk::{RiskEngine, RiskConfig};
 use nkosi_response::ResponseEngine;
 use nkosi_ti::UpdateService;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{info, debug, warn};
 use tracing_subscriber::EnvFilter;
+use tonic::Request;
+
+pub mod central {
+    tonic::include_proto!("nkosi.central");
+}
+use central::nkosi_central_client::NkosiCentralClient;
+use central::*;
 
 mod updater;
+mod incidents;
+use incidents::IncidentManager;
+
+// ── AC-15: Health tracker ──
+
+struct HealthTracker {
+    modules: HashMap<String, ModuleHealth>,
+    _was_degraded: bool,
+}
+
+impl HealthTracker {
+    fn new() -> Self {
+        Self { modules: HashMap::new(), _was_degraded: false }
+    }
+
+    fn record_ok(&mut self, name: &str) {
+        self.modules.insert(name.to_string(), ModuleHealth {
+            name: name.to_string(),
+            status: ModuleStatus::Ok,
+            message: None,
+            since: chrono::Utc::now(),
+        });
+    }
+
+    fn record_failed(&mut self, name: &str, reason: &str) {
+        warn!("Module '{}' failed: {}", name, reason);
+        self.modules.insert(name.to_string(), ModuleHealth {
+            name: name.to_string(),
+            status: ModuleStatus::Failed,
+            message: Some(reason.to_string()),
+            since: chrono::Utc::now(),
+        });
+    }
+
+    fn record_disabled(&mut self, name: &str) {
+        self.modules.insert(name.to_string(), ModuleHealth {
+            name: name.to_string(),
+            status: ModuleStatus::Disabled,
+            message: None,
+            since: chrono::Utc::now(),
+        });
+    }
+
+    fn agent_status(&self) -> AgentHealthStatus {
+        if self.modules.values().any(|m| m.status == ModuleStatus::Failed) {
+            AgentHealthStatus::Degraded
+        } else {
+            AgentHealthStatus::Running
+        }
+    }
+
+    fn snapshot(&self) -> Vec<ModuleHealth> {
+        self.modules.values().cloned().collect()
+    }
+}
+
+// ── Central (gRPC) client ──
+
+struct CentralClient {
+    client: Option<NkosiCentralClient<tonic::transport::Channel>>,
+    agent_id: String,
+}
+
+impl CentralClient {
+    async fn connect(addr: &str, agent_id: &str) -> Self {
+        match NkosiCentralClient::connect(format!("http://{}", addr)).await {
+            Ok(client) => {
+                info!("Connected to central at {}", addr);
+                Self { client: Some(client), agent_id: agent_id.to_string() }
+            }
+            Err(e) => {
+                warn!("Failed to connect to central at {}: {}", addr, e);
+                Self { client: None, agent_id: agent_id.to_string() }
+            }
+        }
+    }
+
+    async fn register(&mut self, hostname: &str, ip: &str, version: &str) {
+        if let Some(ref mut client) = self.client {
+            let req = AgentInfo {
+                agent_id: self.agent_id.clone(),
+                hostname: hostname.to_string(),
+                ip_address: ip.to_string(),
+                os_version: std::env::var("OS").unwrap_or_else(|_| "Linux".to_string()),
+                nkosi_version: version.to_string(),
+                agent_name: format!("agent-{}", hostname),
+            };
+            match client.register_agent(Request::new(req)).await {
+                Ok(resp) => info!("Registered with central: {}", resp.into_inner().message),
+                Err(e) => warn!("Failed to register with central: {}", e),
+            }
+        }
+    }
+
+    async fn send_heartbeat(&mut self, score: u32, events: u32, threats: u32) {
+        if let Some(ref mut client) = self.client {
+            let hb = AgentHeartbeat {
+                agent_id: self.agent_id.clone(),
+                timestamp: chrono::Utc::now().timestamp(),
+                events_count: events,
+                threats_count: threats,
+                score,
+            };
+            if let Err(e) = client.heartbeat(Request::new(hb)).await {
+                warn!("Heartbeat failed: {}", e);
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    async fn send_events(&mut self, events: Vec<SecurityEvent>) {
+        if let Some(ref mut client) = self.client
+            && !events.is_empty()
+        {
+            let batch = EventBatch {
+                agent_id: self.agent_id.clone(),
+                events,
+            };
+            match client.report_events(Request::new(batch)).await {
+                Ok(resp) => debug!("Reported {} events to central", resp.into_inner().received_count),
+                Err(e) => warn!("Failed to report events to central: {}", e),
+            }
+        }
+    }
+
+    /// Push recent higher-severity events from the local DB to the central
+    /// server so the centralized console can aggregate them.
+    async fn report_recent_events(&mut self, db: &Database) {
+        if self.client.is_none() {
+            return;
+        }
+        let repo = nkosi_db::EventRepository::new(db);
+        let Ok(events) = repo.get_recent(200) else { return };
+
+        let now = chrono::Utc::now().timestamp();
+        let batch: Vec<SecurityEvent> = events
+            .iter()
+            .filter(|e| {
+                // Only forward events worth correlating (medium+) to avoid noise.
+                matches!(e.severity, Severity::Medium | Severity::High | Severity::Critical)
+            })
+            .map(|e| SecurityEvent {
+                id: uuid::Uuid::new_v4().to_string(),
+                timestamp: now,
+                event_type: serde_json::to_string(&e.event_type)
+                    .unwrap_or_default()
+                    .trim_matches('"')
+                    .to_string(),
+                source_module: e.source_module.clone(),
+                severity: serde_json::to_string(&e.severity)
+                    .unwrap_or_default()
+                    .trim_matches('"')
+                    .to_string(),
+                score: e.score.unwrap_or(0),
+                file_path: e.file_path.clone().unwrap_or_default(),
+                file_hash: e.file_hash.clone().unwrap_or_default(),
+                remote_ip: e.remote_ip.clone().unwrap_or_default(),
+                remote_port: e.remote_port.map(u32::from).unwrap_or(0),
+                domain: e.domain.clone().unwrap_or_default(),
+                details: e.result.clone().unwrap_or_default(),
+                agent_id: self.agent_id.clone(),
+            })
+            .collect();
+
+        self.send_events(batch).await;
+    }
+}
+
+fn get_hostname() -> String {
+    std::fs::read_to_string("/etc/hostname")
+        .unwrap_or_else(|_| "unknown".to_string())
+        .trim()
+        .to_string()
+}
+
+fn get_local_ip() -> String {
+    std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| {
+            s.connect("8.8.8.8:80")?;
+            Ok(s.local_addr()?.ip().to_string())
+        })
+        .unwrap_or_else(|_| "127.0.0.1".to_string())
+}
+
+fn health_file_path() -> std::path::PathBuf {
+    // Prefer systemd runtime directory if available
+    if let Ok(runtime_dir) = std::env::var("RUNTIME_DIRECTORY") {
+        return std::path::PathBuf::from(runtime_dir).join("health.json");
+    }
+    // Fallback to /run/nkosi/health.json
+    let run_path = std::path::PathBuf::from("/run/nkosi/health.json");
+    if run_path.parent().is_some_and(|p| p.exists()) {
+        return run_path;
+    }
+    // Last resort: current directory
+    std::path::PathBuf::from("data/health.json")
+}
+
+async fn write_health_file(health: &Arc<RwLock<HealthTracker>>) {
+    let snapshot = health.read().await.snapshot();
+    if let Some(parent) = health_file_path().parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    if let Ok(json) = serde_json::to_string(&snapshot)
+        && let Err(e) = std::fs::write(health_file_path(), json)
+    {
+        warn!("Failed to write health file: {}", e);
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,14 +242,38 @@ async fn main() -> Result<()> {
 
     info!("Starting NKOSI Security Agent");
 
-    let config = load_config().await?;
+    let config = load_config()?;
     info!("Configuration loaded");
 
-    let db = init_database(&config).await?;
-    info!("Database initialized");
+    let health = Arc::new(RwLock::new(HealthTracker::new()));
+
+    // Database — critical but non-fatal
+    let db = match init_database(&config) {
+        Ok(db) => {
+            health.write().await.record_ok("database");
+            info!("Database initialized");
+            db
+        }
+        Err(e) => {
+            // Fallback: local DB
+            let local_path = std::path::PathBuf::from("data/nkosi.db");
+            std::fs::create_dir_all("data").ok();
+            match Database::new(&local_path) {
+                Ok(db) => {
+                    health.write().await.record_failed("database", &format!("{} (fallback to local)", e));
+                    db
+                }
+                Err(e2) => {
+                    health.write().await.record_failed("database", &format!("{} and fallback failed: {}", e, e2));
+                    panic!("No database available: {} / {}", e, e2);
+                }
+            }
+        }
+    };
 
     let notify_config = convert_notify_config(&config);
     let notify_manager = Arc::new(NotifyManager::new(notify_config));
+    health.write().await.record_ok("notifications");
     info!("Notification manager initialized with {} notifiers", notify_manager.notifiers_count());
 
     notify_manager.notify(Alert {
@@ -43,9 +286,18 @@ async fn main() -> Result<()> {
         details: None,
     }).await;
 
+    // TI service — non-critical
     let ti_service = UpdateService::new(db.clone(), config.threat_intel.update_interval_hours);
-    ti_service.start().await?;
-    info!("Threat Intelligence Update Service started");
+    match ti_service.start().await {
+        Ok(()) => {
+            health.write().await.record_ok("ti_service");
+            info!("Threat Intelligence Update Service started");
+        }
+        Err(e) => {
+            health.write().await.record_failed("ti_service", &e.to_string());
+            warn!("TI service failed to start: {}", e);
+        }
+    }
 
     let event_bus = Arc::new(EventBus::new(1000));
     let engines = Arc::new(Engines::new(&config));
@@ -54,6 +306,9 @@ async fn main() -> Result<()> {
         config.quarantine.path.clone(),
         Some(db.clone()),
     ));
+    let incident_manager = Arc::new(tokio::sync::Mutex::new(IncidentManager::new(db.clone())));
+
+    health.write().await.record_ok("engines");
 
     let db_clone = db.clone();
     let engines_clone = engines.clone();
@@ -61,15 +316,70 @@ async fn main() -> Result<()> {
     let response_clone = response_engine.clone();
     let event_bus_clone = event_bus.clone();
     let notify_clone = notify_manager.clone();
+    let incident_clone = incident_manager.clone();
     
     tokio::spawn(async move {
-        process_events(event_bus_clone, engines_clone, risk_clone, response_clone, db_clone, notify_clone).await;
+        process_events(event_bus_clone, engines_clone, risk_clone, response_clone, db_clone, notify_clone, incident_clone).await;
     });
 
-    start_monitors(&config, event_bus).await?;
+    // Monitors — each independently degradable
+    match start_monitors(&config, event_bus, &health).await {
+        Ok(()) => info!("All monitors started"),
+        Err(e) => warn!("Some monitors failed: {}", e),
+    }
     
-    info!("NKOSI Agent started successfully");
-    info!("Protection active - monitoring system");
+    let agent_status = health.read().await.agent_status();
+    info!("NKOSI Agent started — status: {:?}", agent_status);
+
+    // Send notification if agent started in degraded mode
+    if agent_status == AgentHealthStatus::Degraded {
+        let failed: Vec<String> = health.read().await.snapshot()
+            .iter()
+            .filter(|m| m.status == ModuleStatus::Failed)
+            .map(|m| format!("{}: {}", m.name, m.message.as_deref().unwrap_or("unknown")))
+            .collect();
+        notify_manager.notify(Alert {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now(),
+            level: AlertLevel::Warning,
+            title: "NKOSI Agent started in DEGRADED mode".to_string(),
+            message: format!("Failed modules: {}", failed.join(", ")),
+            source: "health_tracker".to_string(),
+            details: None,
+        }).await;
+    }
+
+    // Write health status to shared file for API consumption
+    write_health_file(&health).await;
+
+    // Central connection (optional, via NKOSI_CENTRAL_ADDR)
+    let agent_id = uuid::Uuid::new_v4().to_string();
+    let central_addr = std::env::var("NKOSI_CENTRAL_ADDR").unwrap_or_default();
+    let hostname = get_hostname();
+    let nkosi_version = env!("CARGO_PKG_VERSION");
+
+    let mut central_client = if !central_addr.is_empty() {
+        let mut c = CentralClient::connect(&central_addr, &agent_id).await;
+        c.register(&hostname, &get_local_ip(), nkosi_version).await;
+        Some(c)
+    } else {
+        info!("NKOSI_CENTRAL_ADDR not set, running in standalone mode");
+        None
+    };
+
+    if let Some(mut cc) = central_client.take() {
+        let db_for_central = db.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                cc.send_heartbeat(100, 0, 0).await;
+                // Forward recent security events so the centralized console can
+                // aggregate alerts across all servers.
+                cc.report_recent_events(&db_for_central).await;
+            }
+        });
+    }
 
     tokio::signal::ctrl_c().await?;
     info!("Shutting down NKOSI Agent");
@@ -161,64 +471,40 @@ fn convert_notify_config(config: &NkosiConfig) -> NotifyConfig {
     }
 }
 
-async fn load_config() -> Result<NkosiConfig> {
-    let config_path = "/etc/nkosi/nkosi.toml";
-    if Path::new(config_path).exists() {
-        Ok(NkosiConfig::load(config_path)?)
-    } else {
-        let local_config = "config/nkosi.toml";
-        if Path::new(local_config).exists() {
-            info!("Using local configuration");
-            Ok(NkosiConfig::load(local_config)?)
-        } else {
-            info!("Using default configuration");
-            Ok(NkosiConfig::default())
-        }
-    }
-}
-
-async fn init_database(config: &NkosiConfig) -> Result<Database> {
-    let db_path = &config.agent.db_path;
-    
-    if let Some(parent) = db_path.parent() {
-        if parent.exists() {
-            if std::fs::create_dir_all(parent).is_ok() {
-                if let Ok(db) = Database::new(db_path) {
-                    return Ok(db);
-                }
-            }
-        }
-    }
-    
-    let local_path = std::env::current_dir()?.join("data").join("nkosi.db");
-    if let Some(parent) = local_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    info!("Using local database: {}", local_path.display());
-    Ok(Database::new(&local_path)?)
-}
-
-async fn start_monitors(config: &NkosiConfig, event_bus: Arc<EventBus>) -> Result<()> {
+async fn start_monitors(config: &NkosiConfig, event_bus: Arc<EventBus>, health: &Arc<RwLock<HealthTracker>>) -> Result<()> {
     info!("Starting monitors...");
     
-    let fs_monitor = FilesystemMonitor::new(
+    // Filesystem monitor — critical
+    match FilesystemMonitor::new(
         config.monitors.watched_paths.clone(),
         config.monitors.excluded_paths.clone(),
         event_bus.clone(),
-    );
-    fs_monitor.start().await?;
+    ).start().await {
+        Ok(()) => health.write().await.record_ok("filesystem_monitor"),
+        Err(e) => health.write().await.record_failed("filesystem_monitor", &e.to_string()),
+    }
     
+    // Process monitor
     if config.monitors.process_monitor_enabled {
-        let mut proc_monitor = ProcessMonitor::new(event_bus.clone());
-        proc_monitor.start().await?;
+        match ProcessMonitor::new(event_bus.clone()).start().await {
+            Ok(()) => health.write().await.record_ok("process_monitor"),
+            Err(e) => health.write().await.record_failed("process_monitor", &e.to_string()),
+        }
+    } else {
+        health.write().await.record_disabled("process_monitor");
     }
     
+    // Network monitor
     if config.monitors.network_monitor_enabled {
-        let mut net_monitor = NetworkMonitor::new(event_bus.clone());
-        net_monitor.start().await?;
+        match NetworkMonitor::new(event_bus.clone()).start().await {
+            Ok(()) => health.write().await.record_ok("network_monitor"),
+            Err(e) => health.write().await.record_failed("network_monitor", &e.to_string()),
+        }
+    } else {
+        health.write().await.record_disabled("network_monitor");
     }
     
-    info!("All monitors started");
+    info!("Monitors started (health status updated)");
     Ok(())
 }
 
@@ -229,6 +515,7 @@ async fn process_events(
     response_engine: Arc<ResponseEngine>,
     db: Database,
     notify_manager: Arc<NotifyManager>,
+    incident_manager: Arc<tokio::sync::Mutex<IncidentManager>>,
 ) {
     let mut receiver = event_bus.subscribe();
     
@@ -238,7 +525,17 @@ async fn process_events(
         match event {
             MonitorEvent::FileEvent { path, event_type, metadata: _ } => {
                 debug!("File event: {:?} - {}", event_type, path);
-                
+
+                // Record clean file creations so real-time activity is observable (AC-02)
+                if event_type == EventType::FileCreated {
+                    let mut created = Event::new(EventType::FileCreated, "filesystem_monitor");
+                    created.file_path = Some(path.clone());
+                    let repo = nkosi_db::EventRepository::new(&db);
+                    if let Err(e) = repo.insert(&created) {
+                        warn!("Failed to save file-created event: {}", e);
+                    }
+                }
+
                 let file_path = Path::new(&path);
                 let mut detections = Vec::new();
 
@@ -254,7 +551,7 @@ async fn process_events(
                 }
 
                 if !detections.is_empty() {
-                    let assessment = risk_engine.evaluate(detections);
+                    let assessment = risk_engine.evaluate(detections.clone());
                     
                     info!(
                         "Risk assessment for {}: score={}, level={:?}",
@@ -297,6 +594,7 @@ async fn process_events(
                         &action,
                         Some(&path),
                         None,
+                        None,
                         assessment.score,
                         &assessment.details,
                     ).await {
@@ -319,6 +617,18 @@ async fn process_events(
                     if let Err(e) = repo.insert(&event) {
                         warn!("Failed to save event to database: {}", e);
                     }
+
+                    let det_repo = nkosi_db::DetectionRepository::new(&db);
+                    for detection in &assessment.detections {
+                        let mut det = detection.clone();
+                        det.event_id = event.id;
+                        if let Err(e) = det_repo.insert(&det) {
+                            warn!("Failed to save detection: {}", e);
+                        }
+                    }
+
+                    let mut im = incident_manager.lock().await;
+                    im.process_detections(assessment.detections, &event).await;
                 }
             }
             MonitorEvent::ProcessEvent { pid, ppid, executable, args, event_type } => {
@@ -369,6 +679,7 @@ async fn process_events(
                         &action,
                         None,
                         Some(pid),
+                        None,
                         score,
                         &format!("Suspicious process behavior (score: {})", score),
                     ).await {
@@ -417,6 +728,7 @@ async fn process_events(
                             &action,
                             None,
                             Some(pid),
+                            Some(remote_addr.as_str()),
                             risk_score,
                             &format!("Suspicious network connection to {}", remote),
                         ).await {

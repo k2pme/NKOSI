@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tracing::{info, warn};
 
 /// Update configuration
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateConfig {
     pub enabled: bool,
@@ -26,6 +27,7 @@ impl Default for UpdateConfig {
 }
 
 /// Version info from remote
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VersionInfo {
     pub version: String,
@@ -36,6 +38,7 @@ pub struct VersionInfo {
 }
 
 /// Update result
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateResult {
     pub current_version: String,
@@ -46,12 +49,14 @@ pub struct UpdateResult {
 }
 
 /// Auto-update service
+#[allow(dead_code)]
 pub struct AutoUpdater {
     config: UpdateConfig,
     current_version: String,
     binary_path: PathBuf,
 }
 
+#[allow(dead_code)]
 impl AutoUpdater {
     pub fn new(config: UpdateConfig) -> Self {
         let current_version = env!("CARGO_PKG_VERSION").to_string();
