@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tracing::{info, warn, debug};
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntegrityBaseline {
@@ -40,6 +40,12 @@ pub struct IntegrityReport {
 pub struct IntegrityScanner {
     baseline_path: PathBuf,
     watched_dirs: Vec<PathBuf>,
+}
+
+impl Default for IntegrityScanner {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl IntegrityScanner {
@@ -97,12 +103,11 @@ impl IntegrityScanner {
     }
 
     fn load_baseline(&self) -> Option<IntegrityBaseline> {
-        if self.baseline_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&self.baseline_path) {
-                if let Ok(baseline) = serde_json::from_str(&content) {
-                    return Some(baseline);
-                }
-            }
+        if self.baseline_path.exists()
+            && let Ok(content) = std::fs::read_to_string(&self.baseline_path)
+            && let Ok(baseline) = serde_json::from_str(&content)
+        {
+            return Some(baseline);
         }
         None
     }
@@ -130,18 +135,18 @@ impl IntegrityScanner {
                 .filter(|e| e.file_type().is_file())
             {
                 let path = entry.path();
-                if let Ok(metadata) = std::fs::metadata(path) {
-                    if let Ok(hash) = self.compute_hash(path) {
-                        let file_hash = FileHash {
-                            path: path.display().to_string(),
-                            sha256: hash,
-                            size: metadata.len(),
-                            modified: metadata.modified()
-                                .map(|t| format!("{:?}", t))
-                                .unwrap_or_default(),
-                        };
-                        files.insert(path.display().to_string(), file_hash);
-                    }
+                if let Ok(metadata) = std::fs::metadata(path)
+                    && let Ok(hash) = self.compute_hash(path)
+                {
+                    let file_hash = FileHash {
+                        path: path.display().to_string(),
+                        sha256: hash,
+                        size: metadata.len(),
+                        modified: metadata.modified()
+                            .map(|t| format!("{:?}", t))
+                            .unwrap_or_default(),
+                    };
+                    files.insert(path.display().to_string(), file_hash);
                 }
             }
         }

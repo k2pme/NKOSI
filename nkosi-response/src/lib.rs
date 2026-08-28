@@ -1,5 +1,6 @@
 use nkosi_common::types::*;
 use nkosi_db::Database;
+use nkosi_scanner::FirewallManager;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn, error};
 
@@ -18,6 +19,7 @@ impl ResponseEngine {
         action: &ResponseAction,
         file_path: Option<&str>,
         pid: Option<u32>,
+        ip: Option<&str>,
         score: u32,
         reason: &str,
     ) -> anyhow::Result<()> {
@@ -37,7 +39,9 @@ impl ResponseEngine {
                 Ok(())
             }
             ResponseAction::Block => {
-                info!("Action: BLOCK connection");
+                if let Some(ip) = ip {
+                    self.block_ip(ip, reason).await?;
+                }
                 Ok(())
             }
             ResponseAction::Quarantine => {
@@ -57,6 +61,20 @@ impl ResponseEngine {
                     self.delete_from_quarantine(path).await?;
                 }
                 Ok(())
+            }
+        }
+    }
+
+    async fn block_ip(&self, ip: &str, reason: &str) -> anyhow::Result<()> {
+        let mgr = FirewallManager::new();
+        match mgr.block_ip(ip, Some(reason), false) {
+            Ok(()) => {
+                info!("Blocked IP {} via iptables (reason: {})", ip, reason);
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Failed to block IP {} via iptables: {}", ip, e);
+                Err(e)
             }
         }
     }

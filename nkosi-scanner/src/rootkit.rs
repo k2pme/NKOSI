@@ -1,9 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use tracing::{info, warn, debug};
+use std::path::PathBuf;
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RootkitFinding {
@@ -25,7 +23,13 @@ pub struct RootkitReport {
 pub struct RootkitScanner {
     system_binaries: Vec<PathBuf>,
     hidden_file_paths: Vec<PathBuf>,
-    suspicious_paths: Vec<PathBuf>,
+    _suspicious_paths: Vec<PathBuf>,
+}
+
+impl Default for RootkitScanner {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RootkitScanner {
@@ -33,7 +37,7 @@ impl RootkitScanner {
         Self {
             system_binaries: Self::get_system_binaries(),
             hidden_file_paths: Self::get_hidden_file_paths(),
-            suspicious_paths: Self::get_suspicious_paths(),
+            _suspicious_paths: Self::get_suspicious_paths(),
         }
     }
 
@@ -173,16 +177,18 @@ impl RootkitScanner {
         if let Ok(entries) = std::fs::read_dir("/tmp") {
             for entry in entries.flatten() {
                 let name = entry.file_name();
-                if name.to_string_lossy().starts_with('.') && name.to_string_lossy() != "." && name.to_string_lossy() != ".." {
-                    if entry.path().is_file() {
-                        findings.push(RootkitFinding {
-                            category: "Hidden File".to_string(),
-                            severity: "Medium".to_string(),
-                            description: format!("Hidden file in /tmp: {}", name.to_string_lossy()),
-                            path: Some(entry.path().display().to_string()),
-                            details: None,
-                        });
-                    }
+                if name.to_string_lossy().starts_with('.')
+                    && name.to_string_lossy() != "."
+                    && name.to_string_lossy() != ".."
+                    && entry.path().is_file()
+                {
+                    findings.push(RootkitFinding {
+                        category: "Hidden File".to_string(),
+                        severity: "Medium".to_string(),
+                        description: format!("Hidden file in /tmp: {}", name.to_string_lossy()),
+                        path: Some(entry.path().display().to_string()),
+                        details: None,
+                    });
                 }
             }
         }
@@ -286,23 +292,22 @@ impl RootkitScanner {
                     let state = parts[3];
 
                     // STATE 0A = LISTEN
-                    if state == "0A" {
-                        if let Some(port_hex) = local_addr.split(':').last() {
-                            if let Ok(port) = u32::from_str_radix(port_hex, 16) {
-                                // Flag high ports that could be backdoors
-                                if port > 1024 && port < 65535 {
-                                    // Check if it's a known suspicious port
-                                    let suspicious_ports = [4444, 5555, 6666, 7777, 8888, 9999, 12345, 31337, 1234, 54321];
-                                    if suspicious_ports.contains(&port) {
-                                        findings.push(RootkitFinding {
-                                            category: "Suspicious Port".to_string(),
-                                            severity: "High".to_string(),
-                                            description: format!("Listening on suspicious port: {}", port),
-                                            path: Some("/proc/net/tcp".to_string()),
-                                            details: Some(line.to_string()),
-                                        });
-                                    }
-                                }
+                    if state == "0A"
+                        && let Some(port_hex) = local_addr.split(':').next_back()
+                        && let Ok(port) = u32::from_str_radix(port_hex, 16)
+                    {
+                        // Flag high ports that could be backdoors
+                        if port > 1024 && port < 65535 {
+                            // Check if it's a known suspicious port
+                            let suspicious_ports = [4444, 5555, 6666, 7777, 8888, 9999, 12345, 31337, 1234, 54321];
+                            if suspicious_ports.contains(&port) {
+                                findings.push(RootkitFinding {
+                                    category: "Suspicious Port".to_string(),
+                                    severity: "High".to_string(),
+                                    description: format!("Listening on suspicious port: {}", port),
+                                    path: Some("/proc/net/tcp".to_string()),
+                                    details: Some(line.to_string()),
+                                });
                             }
                         }
                     }
@@ -362,28 +367,28 @@ impl RootkitScanner {
         for dir in &init_dirs {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 for entry in entries.flatten() {
-                    if entry.path().is_file() {
-                        if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                            let suspicious = [
-                                "wget", "curl", "nc ", "bash -i",
-                                "/dev/tcp", "base64", "chmod 777",
-                            ];
+                    if entry.path().is_file()
+                        && let Ok(content) = std::fs::read_to_string(entry.path())
+                    {
+                        let suspicious = [
+                            "wget", "curl", "nc ", "bash -i",
+                            "/dev/tcp", "base64", "chmod 777",
+                        ];
 
-                            for line in content.lines() {
-                                for &s in &suspicious {
-                                    if line.contains(s) {
-                                        findings.push(RootkitFinding {
-                                            category: "Suspicious Init Script".to_string(),
-                                            severity: "High".to_string(),
-                                            description: format!(
-                                                "Suspicious command in {}: {}",
-                                                entry.path().display(),
-                                                line.trim()
-                                            ),
-                                            path: Some(entry.path().display().to_string()),
-                                            details: None,
-                                        });
-                                    }
+                        for line in content.lines() {
+                            for &s in &suspicious {
+                                if line.contains(s) {
+                                    findings.push(RootkitFinding {
+                                        category: "Suspicious Init Script".to_string(),
+                                        severity: "High".to_string(),
+                                        description: format!(
+                                            "Suspicious command in {}: {}",
+                                            entry.path().display(),
+                                            line.trim()
+                                        ),
+                                        path: Some(entry.path().display().to_string()),
+                                        details: None,
+                                    });
                                 }
                             }
                         }
@@ -438,7 +443,7 @@ mod tests {
     #[test]
     fn test_calculate_score_empty() {
         let scanner = RootkitScanner::new();
-        let score = scanner.calculate_score(&vec![]);
+        let score = scanner.calculate_score(&[]);
         assert_eq!(score, 0);
     }
 

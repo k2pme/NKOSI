@@ -10,9 +10,23 @@ sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
+lru.workspace = true
 regex = "1"
 uuid.workspace = true
 chrono.workspace = true
+
+[features]
+default = []
+real-yara = ["yara"]
+advanced-static = ["goblin"]
+
+[dependencies.yara]
+version = "0.32"
+optional = true
+
+[dependencies.goblin]
+version = "0.8"
+optional = true
 
 [dev-dependencies]
 tempfile = "3"

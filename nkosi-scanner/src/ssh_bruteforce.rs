@@ -211,7 +211,7 @@ impl SshBruteforceScanner {
         }
 
         // Sort by failed attempts descending
-        attackers.sort_by(|a, b| b.failed_attempts.cmp(&a.failed_attempts));
+        attackers.sort_by_key(|a| std::cmp::Reverse(a.failed_attempts));
         attackers
     }
 

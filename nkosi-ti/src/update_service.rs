@@ -110,11 +110,11 @@ impl UpdateService {
         
         for indicator in indicators {
             // Check if already exists
-            if let Ok(existing) = repo.find_by_value(&indicator.value) {
-                if existing.is_some() {
-                    debug!("Indicator already exists: {}", indicator.value);
-                    continue;
-                }
+            if let Ok(existing) = repo.find_by_value(&indicator.value)
+                && existing.is_some()
+            {
+                debug!("Indicator already exists: {}", indicator.value);
+                continue;
             }
             
             if let Err(e) = repo.insert(indicator) {

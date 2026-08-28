@@ -1,3 +1,4 @@
+pub mod integrity_check;
 pub mod malwarebazaar;
 pub mod threatfox;
 pub mod urlhaus;

@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::fs;
 use tracing::{info, warn};
 
@@ -34,6 +33,12 @@ pub struct FirewallStatus {
     pub whitelist_count: u32,
     pub blacklist: Vec<IpEntry>,
     pub whitelist: Vec<IpEntry>,
+}
+
+impl Default for FirewallManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FirewallManager {
@@ -327,17 +332,16 @@ impl FirewallManager {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
-                if line.contains("DROP") || line.contains("ACCEPT") {
-                    if let Some(ip) = line.split_whitespace().nth(3) {
-                        if ip.contains('/') || ip.parse::<std::net::IpAddr>().is_ok() {
-                            entries.push(IpEntry {
-                                ip: ip.to_string(),
-                                comment: None,
-                                expires_at: None,
-                                added_at: String::new(),
-                            });
-                        }
-                    }
+                if (line.contains("DROP") || line.contains("ACCEPT"))
+                    && let Some(ip) = line.split_whitespace().nth(3)
+                    && (ip.contains('/') || ip.parse::<std::net::IpAddr>().is_ok())
+                {
+                    entries.push(IpEntry {
+                        ip: ip.to_string(),
+                        comment: None,
+                        expires_at: None,
+                        added_at: String::new(),
+                    });
                 }
             }
         }

@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 nkosi-common = { path = "../nkosi-common" }
 nkosi-db = { path = "../nkosi-db" }
+nkosi-scanner = { path = "../nkosi-scanner" }
 tokio.workspace = true
 tracing.workspace = true
 anyhow.workspace = true

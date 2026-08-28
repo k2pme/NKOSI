@@ -21,6 +21,12 @@ pub struct StaticAnalyzer {
     shell_patterns: Vec<String>,
 }
 
+impl Default for StaticAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StaticAnalyzer {
     pub fn new() -> Self {
         Self {
@@ -63,6 +69,14 @@ impl StaticAnalyzer {
         let ips = self.extract_ips(&content_str);
         let shell_commands = self.find_shell_commands(&content_str);
 
+        // Advanced binary analysis
+        let mut binary_findings = Vec::new();
+        if file_type == "ELF" {
+            binary_findings.extend(self.analyze_elf(&content));
+        } else if file_type == "PE" {
+            binary_findings.extend(self.analyze_pe(&content));
+        }
+
         let risk_score = self.calculate_risk_score(
             is_executable,
             has_suid,
@@ -70,6 +84,7 @@ impl StaticAnalyzer {
             &urls,
             &ips,
             &shell_commands,
+            &binary_findings,
         );
 
         debug!(
@@ -85,6 +100,7 @@ impl StaticAnalyzer {
             Some(Detection {
                 id: uuid::Uuid::new_v4(),
                 event_id: uuid::Uuid::new_v4(),
+                incident_id: None,
                 detection_engine: DetectionEngine::StaticAnalysis,
                 rule_id: Some("STATIC-RISK".to_string()),
                 rule_name: Some("Static Analysis Risk".to_string()),
@@ -128,6 +144,79 @@ impl StaticAnalyzer {
         }
     }
 
+    #[cfg(feature = "advanced-static")]
+    fn analyze_elf(&self, content: &[u8]) -> Vec<String> {
+        let mut findings = Vec::new();
+        if let Ok(elf) = goblin::elf::Elf::parse(content) {
+            // Check for stripped binary
+            if elf.syms.is_empty() && elf.strtab.is_empty() {
+                findings.push("ELF stripped (no symbols)".to_string());
+            }
+            // Check for unusual sections
+            let section_names: Vec<&str> = elf.section_headers.iter()
+                .filter_map(|sh| elf.shdr_strtab.get_at(sh.sh_name))
+                .collect();
+            if section_names.iter().any(|s| *s == ".upx0" || *s == ".upx1") {
+                findings.push("UPX packer detected".to_string());
+            }
+            // Check for suspicious imports
+            for sym in elf.dynsyms.iter() {
+                if let Some(name) = elf.dynstrtab.get_at(sym.st_name) {
+                    match name {
+                        "ptrace" | "mmap" | "mprotect" | "madvise" => {
+                            findings.push(format!("Suspicious import: {}", name));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            // Check interpreter
+            if let Some(interp) = &elf.interpreter {
+                if !interp.starts_with("/lib") {
+                    findings.push(format!("Unusual interpreter: {}", interp));
+                }
+            }
+        }
+        findings
+    }
+
+    #[cfg(not(feature = "advanced-static"))]
+    fn analyze_elf(&self, _content: &[u8]) -> Vec<String> {
+        Vec::new()
+    }
+
+    #[cfg(feature = "advanced-static")]
+    fn analyze_pe(&self, content: &[u8]) -> Vec<String> {
+        let mut findings = Vec::new();
+        if let Ok(pe) = goblin::pe::PE::parse(content) {
+            // Check imports for suspicious APIs
+            let imports: Vec<&str> = pe.imports.iter()
+                .filter_map(|i| Some(i.name))
+                .collect();
+            let suspicious_apis = ["VirtualAllocEx", "WriteProcessMemory", "CreateRemoteThread",
+                "NtUnmapViewOfSection", "IsDebuggerPresent", "GetTickCount"];
+            for api in &suspicious_apis {
+                if imports.iter().any(|i| i == api) {
+                    findings.push(format!("Suspicious PE import: {}", api));
+                }
+            }
+            // Check for unusual sections
+            for section in &pe.sections {
+                let name = String::from_utf8_lossy(&section.name);
+                let name = name.trim_end_matches('\0');
+                if name == ".upx0" || name == ".upx1" {
+                    findings.push("UPX packer detected".to_string());
+                }
+            }
+        }
+        findings
+    }
+
+    #[cfg(not(feature = "advanced-static"))]
+    fn analyze_pe(&self, _content: &[u8]) -> Vec<String> {
+        Vec::new()
+    }
+
     fn is_executable(&self, _path: &Path, metadata: &std::fs::Metadata) -> bool {
         #[cfg(unix)]
         {
@@ -166,11 +255,10 @@ impl StaticAnalyzer {
         ];
 
         for pattern in suspicious_patterns {
-            if let Ok(re) = Regex::new(pattern) {
-                for _ in re.find_iter(content) {
-                    suspicious.push(pattern.to_string());
-                    break;
-                }
+            if let Ok(re) = Regex::new(pattern)
+                && re.is_match(content)
+            {
+                suspicious.push(pattern.to_string());
             }
         }
 
@@ -203,6 +291,7 @@ impl StaticAnalyzer {
         found
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn calculate_risk_score(
         &self,
         is_executable: bool,
@@ -211,6 +300,7 @@ impl StaticAnalyzer {
         urls: &[String],
         ips: &[String],
         shell_commands: &[String],
+        binary_findings: &[String],
     ) -> u32 {
         let mut score = 0;
 
@@ -226,6 +316,7 @@ impl StaticAnalyzer {
         score += (urls.len() as u32) * 3;
         score += (ips.len() as u32) * 4;
         score += (shell_commands.len() as u32) * 8;
+        score += (binary_findings.len() as u32) * 10;
 
         score.min(100)
     }

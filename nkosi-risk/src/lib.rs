@@ -154,6 +154,7 @@ mod tests {
         Detection {
             id: uuid::Uuid::new_v4(),
             event_id: uuid::Uuid::new_v4(),
+            incident_id: None,
             detection_engine: engine,
             rule_id: Some("TEST".to_string()),
             rule_name: Some("Test Detection".to_string()),

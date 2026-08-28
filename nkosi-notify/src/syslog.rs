@@ -3,13 +3,13 @@ use crate::trait_notif::Notifier;
 use crate::types::{Alert, AlertLevel, SyslogConfig};
 
 pub struct SyslogNotifier {
-    config: SyslogConfig,
+    _config: SyslogConfig,
     min_level: AlertLevel,
 }
 
 impl SyslogNotifier {
     pub fn new(config: SyslogConfig, min_level: AlertLevel) -> anyhow::Result<Self> {
-        Ok(Self { config, min_level })
+        Ok(Self { _config: config, min_level })
     }
 
     fn format_message(&self, alert: &Alert) -> String {

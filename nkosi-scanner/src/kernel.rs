@@ -1,7 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use tracing::{info, warn};
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KernelModule {
@@ -32,6 +31,12 @@ pub struct KernelReport {
 
 pub struct KernelScanner {
     whitelisted_modules: Vec<String>,
+}
+
+impl Default for KernelScanner {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KernelScanner {
@@ -319,7 +324,7 @@ mod tests {
     #[test]
     fn test_calculate_score_empty() {
         let scanner = KernelScanner::new();
-        let score = scanner.calculate_score(&vec![]);
+        let score = scanner.calculate_score(&[]);
         assert_eq!(score, 0);
     }
 }

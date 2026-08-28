@@ -1,16 +1,26 @@
 use nkosi_common::types::*;
 use sha2::{Sha256, Digest};
 use std::path::Path;
+use std::num::NonZeroUsize;
+use lru::LruCache;
 use tracing::{debug, info, warn};
 
 pub struct HashEngine {
     known_hashes: Vec<String>,
+    sha256_cache: std::sync::Mutex<LruCache<String, String>>,
+}
+
+impl Default for HashEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HashEngine {
     pub fn new() -> Self {
         Self {
             known_hashes: Vec::new(),
+            sha256_cache: std::sync::Mutex::new(LruCache::new(NonZeroUsize::new(10000).unwrap())),
         }
     }
 
@@ -20,11 +30,19 @@ impl HashEngine {
     }
 
     pub fn compute_sha256(&self, path: &Path) -> anyhow::Result<String> {
+        let key = path.display().to_string();
+        {
+            let mut cache = self.sha256_cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(cached) = cache.get(&key) {
+                return Ok(cached.clone());
+            }
+        }
+
         let mut file = std::fs::File::open(path)?;
         let mut hasher = Sha256::new();
         use std::io::Read;
         let mut buffer = [0u8; 8192];
-        
+
         loop {
             let bytes_read = file.read(&mut buffer)?;
             if bytes_read == 0 {
@@ -32,8 +50,10 @@ impl HashEngine {
             }
             hasher.update(&buffer[..bytes_read]);
         }
-        
-        Ok(format!("{:x}", hasher.finalize()))
+
+        let result = format!("{:x}", hasher.finalize());
+        self.sha256_cache.lock().unwrap_or_else(|e| e.into_inner()).put(key, result.clone());
+        Ok(result)
     }
 
     pub fn is_known_malware(&self, hash: &str) -> bool {
@@ -50,6 +70,7 @@ impl HashEngine {
                     Some(Detection {
                         id: uuid::Uuid::new_v4(),
                         event_id: uuid::Uuid::new_v4(),
+                        incident_id: None,
                         detection_engine: DetectionEngine::Hash,
                         rule_id: Some("HASH-MALWARE".to_string()),
                         rule_name: Some("Known Malware Hash".to_string()),
@@ -82,7 +103,7 @@ mod tests {
         temp.write_all(b"Hello, World!").unwrap();
         temp.flush().unwrap();
 
-        let engine = HashEngine::new();
+        let mut engine = HashEngine::new();
         let hash = engine.compute_sha256(temp.path()).unwrap();
         
         assert_eq!(hash, "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f");
@@ -107,7 +128,7 @@ mod tests {
         temp.write_all(b"This is a clean file").unwrap();
         temp.flush().unwrap();
 
-        let engine = HashEngine::new();
+        let mut engine = HashEngine::new();
         let result = engine.analyze_file(temp.path());
         assert!(result.is_none());
     }
@@ -119,7 +140,7 @@ mod tests {
         temp.flush().unwrap();
 
         let hash = {
-            let engine = HashEngine::new();
+            let mut engine = HashEngine::new();
             engine.compute_sha256(temp.path()).unwrap()
         };
 
@@ -136,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_analyze_nonexistent_file() {
-        let engine = HashEngine::new();
+        let mut engine = HashEngine::new();
         let result = engine.analyze_file(Path::new("/nonexistent/file"));
         assert!(result.is_none());
     }

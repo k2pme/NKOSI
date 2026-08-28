@@ -27,6 +27,12 @@ pub struct BehaviorEngine {
     window_size_secs: u64,
 }
 
+impl Default for BehaviorEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BehaviorEngine {
     pub fn new() -> Self {
         Self {
@@ -81,6 +87,7 @@ impl BehaviorEngine {
                 return Some(Detection {
                     id: uuid::Uuid::new_v4(),
                     event_id: uuid::Uuid::new_v4(),
+                    incident_id: None,
                     detection_engine: DetectionEngine::Behavior,
                     rule_id: Some("BEHAVIOR-001".to_string()),
                     rule_name: Some("Sensitive File Access".to_string()),
@@ -97,6 +104,7 @@ impl BehaviorEngine {
                 return Some(Detection {
                     id: uuid::Uuid::new_v4(),
                     event_id: uuid::Uuid::new_v4(),
+                    incident_id: None,
                     detection_engine: DetectionEngine::Behavior,
                     rule_id: Some("BEHAVIOR-002".to_string()),
                     rule_name: Some("Sudoers File Access".to_string()),
@@ -113,6 +121,7 @@ impl BehaviorEngine {
                 return Some(Detection {
                     id: uuid::Uuid::new_v4(),
                     event_id: uuid::Uuid::new_v4(),
+                    incident_id: None,
                     detection_engine: DetectionEngine::Behavior,
                     rule_id: Some("BEHAVIOR-003".to_string()),
                     rule_name: Some("SSH Directory Access".to_string()),
@@ -142,6 +151,7 @@ impl BehaviorEngine {
                 return Some(Detection {
                     id: uuid::Uuid::new_v4(),
                     event_id: uuid::Uuid::new_v4(),
+                    incident_id: None,
                     detection_engine: DetectionEngine::Behavior,
                     rule_id: Some("BEHAVIOR-004".to_string()),
                     rule_name: Some("High Network Activity".to_string()),
@@ -154,24 +164,24 @@ impl BehaviorEngine {
                 });
             }
 
-            if let Some((_ip, port_str)) = remote_addr.rsplit_once(':') {
-                if let Ok(port) = port_str.parse::<u16>() {
-                    if port == 4444 || port == 5555 || port == 6666 || port == 7777 {
-                        return Some(Detection {
-                            id: uuid::Uuid::new_v4(),
-                            event_id: uuid::Uuid::new_v4(),
-                            detection_engine: DetectionEngine::Behavior,
-                            rule_id: Some("BEHAVIOR-005".to_string()),
-                            rule_name: Some("Suspicious Port Connection".to_string()),
-                            confidence: 0.8,
-                            score_contribution: 50,
-                            details: Some(format!(
-                                "Process {} (PID: {}) connected to suspicious port {}",
-                                behavior.executable, pid, port
-                            )),
-                        });
-                    }
-                }
+            if let Some((_ip, port_str)) = remote_addr.rsplit_once(':')
+                && let Ok(port) = port_str.parse::<u16>()
+                && (port == 4444 || port == 5555 || port == 6666 || port == 7777)
+            {
+                return Some(Detection {
+                    id: uuid::Uuid::new_v4(),
+                    event_id: uuid::Uuid::new_v4(),
+                    incident_id: None,
+                    detection_engine: DetectionEngine::Behavior,
+                    rule_id: Some("BEHAVIOR-005".to_string()),
+                    rule_name: Some("Suspicious Port Connection".to_string()),
+                    confidence: 0.8,
+                    score_contribution: 50,
+                    details: Some(format!(
+                        "Process {} (PID: {}) connected to suspicious port {}",
+                        behavior.executable, pid, port
+                    )),
+                });
             }
         }
 
